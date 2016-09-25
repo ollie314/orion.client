@@ -20,10 +20,11 @@ define([
 	'orion/URITemplate',
 	'orion/webui/littlelib',
 	'orion/objects',
+	'orion/util',
 	'orion/Deferred',
 	'orion/projects/projectView',
 	'orion/section'
-], function(mGlobalCommands, mExplorerTable, mNavigatorRenderer, FileCommands, mMarkdownView, mProjectEditor, PageUtil, URITemplate, lib, objects, Deferred, mProjectView, mSection) {
+], function(mGlobalCommands, mExplorerTable, mNavigatorRenderer, FileCommands, mMarkdownView, mProjectEditor, PageUtil, URITemplate, lib, objects, util, Deferred, mProjectView, mSection) {
 	
 	var ID_COUNT = 0;
 	
@@ -60,7 +61,7 @@ define([
 				td = document.createElement("th"); //$NON-NLS-0$
 				td.colSpan = 1;
 				var root = this.explorer.treeRoot;
-				td.appendChild(document.createTextNode(root.Parents ? root.Name : this.explorer.fileClient.fileServiceName(root.Location)));
+				td.appendChild(document.createTextNode(root.Parents || util.isElectron ? root.Name : this.explorer.fileClient.fileServiceName(root.Location)));
 				return td;
 			}
 			return null;
@@ -285,9 +286,9 @@ define([
 			var sectionsOrder = ["project", "folderNav", "readme"]; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 			var	sectionNames = {};
 			if(this.preferences) {
-				this.preferences.getPreferences("/sectionsOrder").then(function(sectionsOrderPrefs){ //$NON-NLS-0$
-					sectionNames = sectionsOrderPrefs.get("folderViewNames") || sectionNames; //$NON-NLS-0$
-					sectionsOrder = sectionsOrderPrefs.get("folderView") || sectionsOrder; //$NON-NLS-0$
+				this.preferences.get("/sectionsOrder").then(function(sectionsOrderPrefs){ //$NON-NLS-0$
+					sectionNames = sectionsOrderPrefs["folderViewNames"] || sectionNames; //$NON-NLS-0$
+					sectionsOrder = sectionsOrderPrefs["folderView"] || sectionsOrder; //$NON-NLS-0$
 					renderSections.apply(this, [sectionsOrder, sectionNames]);
 				}.bind(this), function(error){
 					renderSections.apply(this, [sectionsOrder, sectionNames]);

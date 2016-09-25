@@ -31,7 +31,7 @@ define(["chai/chai", "orion/searchUtils"], function(chai, mSearchUtils) {
 			keyword: keyword
 		});
 		var fileModel = makeFileModel();
-		mSearchUtils.searchWithinFile(searchHelper.inFileQuery, fileModel, fileContentText, "\n", replacing);
+		mSearchUtils.searchWithinFile(searchHelper.inFileQuery, fileModel, fileContentText, replacing);
 		return {m: fileModel, q:searchHelper.inFileQuery};
 	}
 	
@@ -41,7 +41,7 @@ define(["chai/chai", "orion/searchUtils"], function(chai, mSearchUtils) {
 	function replaceFile(fileContentText, fileModel, inFileQuery, replaceString) {
 		var newContents = {contents: null};
 		mSearchUtils.generateNewContents(false, fileModel.contents, newContents, fileModel, replaceString, inFileQuery.searchStrLength); 
-		return newContents.contents.join("\n");
+		return newContents.contents.join("");
 	}
 	
 	describe("Test In-file Search", function() {

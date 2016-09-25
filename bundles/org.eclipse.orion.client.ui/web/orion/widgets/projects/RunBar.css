@@ -3,8 +3,8 @@
 .runBarWrapper {
 	-webkit-align-items: center;		 		 /* Safari */
 	align-items: center;
-	border-left: solid 1px #ccc;
-	border-right: solid 1px #ccc;
+	border-left: solid 1px #676f73;
+	border-right: solid 1px #676f73;
 	display: -webkit-inline-flex;		 /* Safari */
 	display: inline-flex;
 	overflow: visible;
@@ -12,28 +12,25 @@
 }
 
 .runBarWrapper .disabled {
-	opacity: 0.15;
+	opacity: 0.30;
 }
 
 .runBarWrapper .disabled:hover {
-	color: #555;
-	opacity: 0.15;
+	opacity: 0.30;
 	cursor: default;
 }
 
 .launchConfigurationsWrapper {
-	background: white;
 	border-radius: 5px;
 	display: inline-block;
 	margin: 0 8px 0 0;
-	min-height: 20px;
 	min-width: 270px;
 	transition: opacity 0.3s ease;
-	z-index: 51;
+	z-index: 60;
 }
 
 .launchConfigurationsWrapper > .launchConfigurationsButton.dropdownTrigger {
-	background: white;
+	background: #37474F;
 	border-radius: 5px;
 	padding: 2px 0 2px 4px;
 	width: 270px;
@@ -42,7 +39,6 @@
 .launchConfigurationsButton > .dropdownTriggerButtonLabel {
 	-webkit-align-items: center;		 		 /* Safari */
 	align-items: center;
-	color: #999;
 	display: -webkit-inline-flex;		 /* Safari */
 	display: inline-flex;
 	overflow: hidden;
@@ -80,6 +76,10 @@
 	padding: 9px 3px 9px 5px;
 }
 
+.launchConfigurationMenuItem.dropdownMenuItemActive {
+	background-color: #DEF7D9;
+}
+
 .dropdownMenu.dropdownMenuOpen > li > .addNewMenuItem {
 	background-color: whitesmoke;
 	border-left-color: transparent;
@@ -96,10 +96,6 @@
 
 }
 
-.launchConfigurationEditButton > .core-sprite-edit {
-	color: #77858D;
-}
-
 .runBarWrapper .runBarButton {
 	background: none;
 	border: 1px solid transparent;
@@ -108,6 +104,7 @@
 	outline: none;
 	padding: 1px;
 	transition: opacity 0.3s ease;
+	cursor: pointer;
 }
 
 .runBarWrapper .runBarButton:not(.disabled):hover {
@@ -124,12 +121,12 @@
 
 .runBarButton.playButton {
 	display: inline-block;
-	font-size: 18px;
+	font-size: 16px;
 }
 
 .runBarButton.stopButton {
 	display: inline-block;
-	font-size: 18px;
+	font-size: 16px;
 }
 
 .statusLabel {
@@ -156,11 +153,15 @@
 }
 
 .statusLight.statusLightGreen {
-	background: green;
+	background: #13dd6d;
 }
 
 .statusLight.statusLightRed {
-	background: red;
+	background: #C1272D;
+}
+
+.statusLight.statusLightAmber {
+	background: #FFE141;
 }
 
 .statusLight.statusLightProgress {
@@ -176,7 +177,7 @@
 }
 
 .runBarSeparator {
-	background: #ccc;
+	background: #676f73;
 	display: inline-block;
 	height: 25px;
 	margin: 0 10px;
@@ -185,7 +186,7 @@
 }
 
 .appName {
-	color: #666;
+	color: white;
 	-webkit-flex-grow: 0;		/* Safari */
 	flex-grow: 0;
 	-webkit-flex-shrink: 1;		/* Safari */
@@ -196,7 +197,7 @@
 }
 
 .appInfoSpan {
-	color: #666;
+	color: white;
 	-webkit-flex-grow: 0;		/* Safari */
 	flex-grow: 0;
 	-webkit-flex-shrink: 0;		/* Safari */
@@ -216,18 +217,21 @@
 	margin: 0 2px;
 }
 
+.runBarLink:hover:not(.disabled) {
+	color: #00AED1;
+}
+
 .runBarLink:hover {
-	color: #F58B0F;
 	text-decoration: none;
 }
 
 .runBarLink.appLink{
-	font-size: 17px;
-	height: 17px;
+	font-size: 16px;
+	height: 16px;
 	line-height: 17px;
-	margin: -4px 0 0 6px;
+	margin: -6px 0 0 6px;
 }
 
 .logsLink {
-	margin: -3px 0 0 10px;
+	margin: -3px 0 0 10px !important;
 }

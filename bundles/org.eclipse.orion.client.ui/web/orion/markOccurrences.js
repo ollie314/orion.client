@@ -63,9 +63,9 @@ define([
 					function(serviceRefs) {
 						var capableServiceRefs = [];
 						for (var i=0; i < serviceRefs.length; i++) {
-							var serviceRef = serviceRefs[i];
-							if (serviceRef && !serviceRef._error) {
-								capableServiceRefs.push(serviceRef);
+							var currentServiceRef = serviceRefs[i];
+							if (currentServiceRef && !currentServiceRef._error) {
+								capableServiceRefs.push(currentServiceRef);
 							}
 						}
 						return capableServiceRefs;
@@ -73,42 +73,61 @@ define([
 			}
 			
 			var occurrenceTimer;
-			var self = this;
-			var occurrencesService = self.registry.getService("orion.edit.occurrences"); //$NON-NLS-0$
-			var selectionListener = function(e) {
+			var that = this;
+			var selectionListener = function() {
 				if (occurrenceTimer) {
 					window.clearTimeout(occurrenceTimer);
 				}
-				if (!self.occurrencesVisible) { return; }
+				if (!that.occurrencesVisible) { return; }
 				occurrenceTimer = window.setTimeout(function() {
 					occurrenceTimer = null;
-					var editor = self.editor;
+					var editor = that.editor;
 					var selections = editor.getSelections();
 					if (selections.length > 1) {
-						self.editor.showOccurrences([]);
+						that.editor.showOccurrences([]);
 						return;
 					}
 					var context = {
 						selection: selections[0],
-						contentType: self.inputManager.getContentType().id
+						contentType: that.inputManager.getContentType().id
 					};
-					occurrencesService.computeOccurrences(editor.getEditorContext(), context).then(function (occurrences) {
-						self.editor.showOccurrences(occurrences);
-					});	
+					
+					if(Array.isArray(that.occurrencesServices) && that.occurrencesServices.length > 0) {
+						var servicePromises = [];
+						var allOccurrences = [];
+						for (var i=0; i<that.occurrencesServices.length; i++) {
+							var serviceEntry = that.occurrencesServices[i];
+							if (serviceEntry){
+								servicePromises.push(serviceEntry.computeOccurrences(editor.getEditorContext(), context).then(function (occurrences) {
+									allOccurrences = allOccurrences.concat(occurrences);
+								}));	
+							}
+						}
+						Deferred.all(servicePromises).then(function(){
+							that.editor.showOccurrences(allOccurrences);
+						});
+					}
 				}, 500);
 			};
 						
-			self.inputManager.addEventListener("InputChanged", function(event) {//$NON-NLS-0$
-				var textView = self.editor.getTextView();
+			that.inputManager.addEventListener("InputChanged", function(evt) {
+				var textView = that.editor.getTextView();
 				if (textView) {
-					textView.removeEventListener("Selection", selectionListener); //$NON-NLS-0$
-					getServiceRefs(self.registry, event.contentType, event.title).then(function(serviceRefs) {
+					textView.removeEventListener("Selection", selectionListener);
+					getServiceRefs(that.registry, evt.contentType, evt.title).then(function(serviceRefs) {
 						if (!serviceRefs || serviceRefs.length === 0) {
 							if (occurrenceTimer) {
 								window.clearTimeout(occurrenceTimer);
 							}
 						} else {
-							textView.addEventListener("Selection", selectionListener); //$NON-NLS-0$
+							that.occurrencesServices = [];
+							for (var a=0; a<serviceRefs.length; a++) {
+								var service = that.registry.getService(serviceRefs[a]);
+								if (service){
+									that.occurrencesServices.push(service);
+								}
+							}
+							textView.addEventListener("Selection", selectionListener);
 						}
 					});
 				}

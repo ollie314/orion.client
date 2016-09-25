@@ -13,43 +13,62 @@
 define([
 	'orion/plugin',
 	'plugins/languages/arduino/arduinoPlugin',
+	'plugins/languages/bash/bashPlugin',
 	'plugins/languages/c/cPlugin',
+	'plugins/languages/coffeescript/coffeescriptPlugin',
 	'plugins/languages/cpp/cppPlugin',
 	'plugins/languages/csharp/csharpPlugin',
 	'plugins/languages/docker/dockerPlugin',
 	'plugins/languages/erlang/erlangPlugin',
 	'plugins/languages/go/goPlugin',
+	'plugins/languages/git/gitFilePlugin',
 	'plugins/languages/haml/hamlPlugin',
 	'plugins/languages/jade/jadePlugin',
 	'plugins/languages/java/javaPlugin',
+	'plugins/languages/json/jsonPlugin',
+	'plugins/languages/jsx/jsxPlugin',
 	'plugins/languages/launch/launchPlugin',
+	'plugins/languages/less/lessPlugin',
 	'plugins/languages/lua/luaPlugin',
 	'plugins/languages/markdown/markdownPlugin',
 	'plugins/languages/objectiveC/objectiveCPlugin',
 	'plugins/languages/php/phpPlugin',
+	'plugins/languages/properties/propertiesPlugin',
 	'plugins/languages/python/pythonPlugin',
 	'plugins/languages/ruby/rubyPlugin',
+	'plugins/languages/scss/scssPlugin',
+	'plugins/languages/smarty/smartyPlugin',
+	'plugins/languages/sql/sqlPlugin',
 	'plugins/languages/swift/swiftPlugin',
+	'plugins/languages/typescript/typescriptPlugin',
 	'plugins/languages/vb/vbPlugin',
 	'plugins/languages/xml/xmlPlugin',
 	'plugins/languages/xquery/xqueryPlugin',
-	'plugins/languages/yaml/yamlPlugin'], function(
-		PluginProvider, mArduinoPlugin, mCPlugin, mCppPlugin, mCSharpPlugin, mDockerfilePlugin, mErlangPlugin, mGoPlugin, mHamlPlugin, mJadePlugin, mJavaPlugin, mLaunch,
-		mLuaPlugin, mMarkdownPlugin, mObjectiveCPlugin, mPhpPlugin, mPythonPlugin, mRubyPlugin, mSwiftPlugin, mVbPlugin, mXmlPlugin, mXQueryPlugin, mYamlPlugin) {
+	'plugins/languages/yaml/yamlPlugin'
+], function(PluginProvider) {
 
-	var languagePlugins = [
-		mArduinoPlugin, mCPlugin, mCppPlugin, mCSharpPlugin, mDockerfilePlugin, mErlangPlugin, mGoPlugin, mHamlPlugin, mJadePlugin, mJavaPlugin, mLaunch,
-		mLuaPlugin, mMarkdownPlugin, mObjectiveCPlugin, mPhpPlugin, mPythonPlugin, mRubyPlugin, mSwiftPlugin, mVbPlugin, mXmlPlugin, mXQueryPlugin, mYamlPlugin
-	];
+	var plugins = Array.prototype.slice.call(arguments);
+	plugins.shift();
 
-	var headers = {
-		name: "Orion Languages Tool Support",
-		version: "1.0",
-		description: "This plugin provides tooling for languages that are not included in other core Orion plugins."
+	function connect() {
+		var headers = {
+			name: "Orion Languages Tool Support",
+			version: "1.0",
+			description: "This plugin provides tooling for languages that are not included in other core Orion plugins."
+		};
+		var pluginProvider = new PluginProvider(headers);
+		registerServiceProviders(pluginProvider);
+		pluginProvider.connect();
+	}
+
+	function registerServiceProviders(provider) {
+		plugins.forEach(function(plugin) {
+			plugin.registerServiceProviders(provider);
+		});
+	}
+
+	return {
+		connect: connect,
+		registerServiceProviders: registerServiceProviders
 	};
-	var pluginProvider = new PluginProvider(headers);
-	languagePlugins.forEach(function(plugin) {
-		plugin.registerServiceProviders(pluginProvider);
-	});
-	pluginProvider.connect();
 });

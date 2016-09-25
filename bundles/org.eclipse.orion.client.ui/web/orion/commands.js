@@ -11,6 +11,7 @@
 /*eslint-env browser, amd*/
  
 define([
+	'i18n!orion/nls/messages',
 	'orion/webui/littlelib',
 	'orion/commandsProxy',
 	'orion/webui/dropdown',
@@ -19,7 +20,7 @@ define([
 	'text!orion/webui/checkedmenuitem.html',
 	'orion/webui/tooltip',
 	'orion/metrics'
-], function(lib, mCommandsProxy, Dropdown, DropdownButtonFragment, DropdownButtonWithArrowFragment, CheckedMenuItemFragment, Tooltip, mMetrics) {
+], function(messages, lib, mCommandsProxy, Dropdown, DropdownButtonFragment, DropdownButtonWithArrowFragment, CheckedMenuItemFragment, Tooltip, mMetrics) {
 		/**
 		 * @name orion.commands.NO_IMAGE
 		 * @description Image data for 16x16 transparent png.
@@ -57,7 +58,7 @@ define([
 			var invocation = binding.invocation;
 			if (invocation) {
 				var command = binding.command;
-				if (command.hrefCallback) {
+				if (typeof(command.hrefCallback) === 'function') {
 					var href = command.hrefCallback.call(invocation.handler || window, invocation);
 					if (href.then){
 						href.then(function(l){
@@ -225,6 +226,98 @@ define([
 		return checkbox;
 	}
 
+	function createQuickfixItem(parentElement, command, commandInvocation, callback, prefService) {
+		var element;
+		var button;
+		var clickTarget;
+		var fixAllCheckbox;
+		var fixAllLabel;
+		
+		var quickfixSettings = '/languageTools/quickfix'; //$NON-NLS-1$
+		
+		element = document.createElement("div");
+		
+		button = clickTarget = document.createElement("button");
+		button.className = "orionButton"; //$NON-NLS-1$
+		if (command.extraClass) {
+			button.classList.add(command.extraClass);
+		}
+		button.classList.add("commandButton"); //$NON-NLS-1$
+		var text = document.createTextNode(command.name);
+		button.appendChild(text);
+		
+		var onClick = callback || command.callback;
+		if (onClick) {
+			var done = function() {
+				if (fixAllCheckbox){
+					if (fixAllCheckbox.checked){
+						commandInvocation.userData.doFixAll = true;
+					}
+					if (prefService){
+						prefService.get(quickfixSettings).then(function(prefs) {
+							prefs[command.id] = fixAllCheckbox.checked;
+							prefService.put(quickfixSettings, prefs);
+						});
+					}
+				}
+				onClick.call(commandInvocation.handler, commandInvocation);
+			};
+			command.onClick = onClick;
+			clickTarget.addEventListener("click", function(e) {
+				var onClickThen;
+				onClickThen = function (doIt) { if(doIt) {
+						done();
+					}
+				};
+				if(command.preCallback) {
+					command.preCallback(commandInvocation).then( function(doIt) {
+						onClickThen(doIt);
+					});
+				} else {
+					onClickThen(true);
+				}
+				e.stopPropagation();
+			}, false);
+		}
+		if (parentElement.nodeName.toLowerCase() === "ul") {
+			var li = document.createElement("li");
+			parentElement.appendChild(li);
+			parentElement = li;
+		} else {
+			button.classList.add("commandMargins"); //$NON-NLS-0$
+		}
+		element.appendChild(button);
+		
+		// We check that the internal access to annotation model exists so if it breaks we don't show the checkbox at all rather than throw an error later
+		if (command.fixAllEnabled && commandInvocation.userData._annotationModel){
+			var id = command.id + 'fixAll'; //$NON-NLS-1$
+			fixAllCheckbox = document.createElement('input');
+			fixAllCheckbox.type = 'checkbox'; //$NON-NLS-1$
+			fixAllCheckbox.className = "quickfixAllParameter"; //$NON-NLS-1$
+			fixAllCheckbox.checked = true;
+			fixAllCheckbox.id = id;
+			
+			fixAllLabel = document.createElement('label');
+			fixAllLabel.htmlFor = id;
+			fixAllLabel.className = "quickfixAllParameter"; //$NON-NLS-1$
+			fixAllLabel.appendChild(document.createTextNode(messages['fixAll'])); 
+			
+			if (prefService){
+				prefService.get(quickfixSettings).then(function(prefs) {
+					if (typeof prefs[command.id] === 'boolean'){
+						fixAllCheckbox.checked = prefs[command.id];
+					}
+					
+				});
+			}
+			
+			element.appendChild(fixAllCheckbox);
+			element.appendChild(fixAllLabel);
+		}
+		parentElement.appendChild(element);
+		return element;
+	}
+	
 	function createCommandItem(parent, command, commandInvocation, id, keyBinding, useImage, callback) {
 		var element;
 		var clickTarget;
@@ -250,7 +343,7 @@ define([
 				}
 		};
 		
-		if (command.hrefCallback) {
+		if (typeof(command.hrefCallback) === 'function') {
 			element = clickTarget = document.createElement("a"); //$NON-NLS-0$
 			element.id = id;
 			if (useImage && command.hasImage()) {
@@ -271,39 +364,37 @@ define([
 			}
 		} else {
 			if (command.type === "switch") { //$NON-NLS-0$
-				element = document.createElement("div"); //$NON-NLS-0$
+				element = clickTarget = document.createElement("div"); //$NON-NLS-0$
+				element.setAttribute("role", "switch"); //$NON-NLS-0$ //$NON-NLS-1$
 				element.tabIndex = 0;
 				element.className = "orionSwitch"; //$NON-NLS-0$
-				var input = clickTarget = document.createElement("input"); //$NON-NLS-0$
-				input.type = "checkbox"; //$NON-NLS-0$
-				input.className = "orionSwitchCheck"; //$NON-NLS-0$
-				input.id = "orionSwitchCheck" + command.id; //$NON-NLS-0$
-				if(parent.id) {
-					input.id = input.id + parent.id;
-				}
-				element.appendChild(input);
-				var label = document.createElement("label"); //$NON-NLS-0$
-				label.className = "orionSwitchLabel"; //$NON-NLS-0$
-				label.setAttribute("for", input.id); //$NON-NLS-0$  
 				var span1 = document.createElement("span"); //$NON-NLS-0$
 				span1.className = "orionSwitchInner"; //$NON-NLS-0$
 				var span2 = document.createElement("span"); //$NON-NLS-0$
 				span2.className = "orionSwitchSwitch"; //$NON-NLS-0$
-				label.appendChild(span1);
-				label.appendChild(span2);
-				element.appendChild(label);
+				element.appendChild(span1);
+				element.appendChild(span2);
 				element.addEventListener("keydown", function(e) { //$NON-NLS-0$
 					if (e.keyCode === lib.KEY.ENTER || e.keyCode === lib.KEY.SPACE) {
-						input.click();
+						element.click();
 					}
 				}, false);
+				element.addEventListener("click", function(e) { //$NON-NLS-0$
+					toggleSwitch(element);
+				}, false);
 
-				input.checked = command.checked;
+				element.setAttribute("aria-checked", command.checked ? "true" : "false"); //$NON-NLS-0$ //$NON-NLS-1$ //$NON-NLS-2$
 				span1.classList.add(command.imageClass);
+				if (command.name) {
+					element.setAttribute("aria-label", command.name); //$NON-NLS-0$
+				}
 			} else if (command.type === "toggle") {  //$NON-NLS-0$
 				element = clickTarget = document.createElement("button"); //$NON-NLS-0$
 				element.className = "orionButton"; //$NON-NLS-0$
 				element.classList.add(command.checked ? "orionToggleOn" : "orionToggleOff");  //$NON-NLS-1$ //$NON-NLS-0$
+				if (command.extraClass) {
+					element.classList.add(command.extraClass);
+				}
 				element.id = "orionToggle" + command.id; //$NON-NLS-0$
 				if(parent.id) {
 					element.id = element.id + parent.id;
@@ -340,9 +431,9 @@ define([
 								}
 							}else {
 								if(doIt) {
-									command.checked = input.checked;
+									command.checked = element.getAttribute("aria-checked") === "true"; //$NON-NLS-0$ //$NON-NLS-1$
 								} else {
-									input.checked = !input.checked;
+									toggleSwitch(element);
 								}
 							}
 							if(doIt) {
@@ -387,19 +478,27 @@ define([
 		return element;
 	}
 	
+	function toggleSwitch(element) {
+		if (element.getAttribute("aria-checked") === "true") { //$NON-NLS-0$ //$NON-NLS-1$
+			element.setAttribute("aria-checked", "false"); //$NON-NLS-0$ //$NON-NLS-1$
+		} else {
+			element.setAttribute("aria-checked", "true"); //$NON-NLS-0$ //$NON-NLS-1$
+		}
+	}
+
 	function createCommandMenuItem(parent, command, commandInvocation, keyBinding, callback, keyBindingString) {
 		var element, li;
 		var dropdown = parent.dropdown;
-		if (command.hrefCallback) {
+		if (typeof(command.hrefCallback) === 'function') {
 			li = Dropdown.createMenuItem(command.name, "a"); //$NON-NLS-0$
-			element = li.firstElementChild;
+			commandInvocation.domNode = element = li.firstElementChild;
 			var href = command.hrefCallback.call(commandInvocation.handler, commandInvocation);
 			if (href.then){
 				href.then(function(l){
 					element.href = l;
 				});
 			} else if (href) {
-				element.href = href; 
+				element.href = href;
 			} else {  // no href
 				element.href = "#"; //$NON-NLS-0$
 			}
@@ -434,7 +533,7 @@ define([
 			element.commandTooltip = new Tooltip.Tooltip({
 				node: element,
 				text: command.tooltip,
-				position: ["above", "below", "right", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+				position: ["right", "above", "below", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 			});
 		}
 		
@@ -450,7 +549,6 @@ define([
 
 		return element;
 	}
-	
 
 	/**
 	 * CommandInvocation is a data structure that carries all relevant information about a command invocation.
@@ -584,6 +682,7 @@ define([
 			this.id = options.id;  // unique id
 			this.name = options.name;
 			this.tooltip = options.tooltip;
+			this.fixAllEnabled = options.fixAllEnabled; // optional toggle for quickfix command to apply to all annotations
 			this.callback = options.callback; // optional callback that should be called when command is activated (clicked)
 			this.preCallback = options.preCallback; // optional callback that should be called when command is activated (clicked)
 			this.hrefCallback = options.hrefCallback; // optional callback that returns an href for a command link
@@ -621,7 +720,7 @@ define([
 					parent.appendChild(itemNode);
 					var node = document.createElement("span"); //$NON-NLS-0$
 					node.tabIndex = 0; 
-					node.role = "menuitem"; //$NON-NLS-0$
+					node.setAttribute("role", "menuitem");  //$NON-NLS-2$ //$NON-NLS-1$
 					node.classList.add("dropdownMenuItem"); //$NON-NLS-0$
 					if (addCheck) {
 						var check = document.createElement("span"); //$NON-NLS-0$
@@ -629,22 +728,25 @@ define([
 						check.appendChild(document.createTextNode(choice.checked ? "\u25CF" : "")); //$NON-NLS-1$ //$NON-NLS-0$
 						node.appendChild(check);
 					}
+					if (choice.imageClass) {
+						var image = document.createElement("span"); //$NON-NLS-0$
+						image.classList.add(choice.imageClass);
+						node.appendChild(image);
+					}
+					var span = document.createElement("span"); //$NON-NLS-0$
 					var text = document.createTextNode(choice.name);
-					node.appendChild(text);
+					span.appendChild(text);
+					node.appendChild(span);
 					itemNode.appendChild(node);
 					node.choice = choice;
 					node.addEventListener("click", function(event) { //$NON-NLS-0$
-						if (event.target.choice) {
-							mMetrics.logEvent("command", "invoke", this.id + ">" + event.target.choice.name); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-							event.target.choice.callback.call(event.target.choice, items);
-						}
+						mMetrics.logEvent("command", "invoke", this.id + ">" + choice.name); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+						choice.callback.call(choice, items);
 					}.bind(this), false); 
 					node.addEventListener("keydown", function(event) { //$NON-NLS-0$
 						if (event.keyCode === lib.KEY.ENTER || event.keyCode === lib.KEY.SPACE) {
-							if (event.target.choice) {
-								mMetrics.logEvent("command", "invoke", this.id + ">" + event.target.choice.name); //$NON-NLS-3$ //$NON-NLS-1$ //$NON-NLS-0$
-								event.target.choice.callback.call(event.target.choice, items);
-							}
+							mMetrics.logEvent("command", "invoke", this.id + ">" + choice.name); //$NON-NLS-3$ //$NON-NLS-1$ //$NON-NLS-0$
+							choice.callback.call(choice, items);
 						}
 					}.bind(this), false);
 				} else {  // anything not named is a separator
@@ -695,6 +797,7 @@ define([
 		CommandInvocation: CommandInvocation,
 		createDropdownMenu: createDropdownMenu,
 		createCheckedMenuItem: createCheckedMenuItem,
+		createQuickfixItem: createQuickfixItem,
 		createCommandItem: createCommandItem,
 		createCommandMenuItem: createCommandMenuItem,
 		executeBinding: executeBinding,

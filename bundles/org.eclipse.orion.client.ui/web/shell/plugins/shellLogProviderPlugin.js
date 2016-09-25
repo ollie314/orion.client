@@ -53,6 +53,8 @@ define(['require', 'orion/plugin', 'orion/xhr', 'orion/Deferred', 'orion/i18nUti
 				return '(405) Unsupported log service request.';
 			case 404:
 				return '(404) Could not find the log service resource.';
+			case 410:
+				return '(410) Could not find the log service resource.';
 			case 403:
 				return '(403) Unauthorized log service request.';
 			case 401:
@@ -71,8 +73,7 @@ define(['require', 'orion/plugin', 'orion/xhr', 'orion/Deferred', 'orion/i18nUti
 				"Orion-Version" : "1",
 				"Content-Type" : handler + "; charset=UTF-8"
 			},
-			timeout : 15000,
-			handleAs : handler
+			timeout : 15000
 		}).then(function(resp) {
 			if(raw){ d.resolve(resp.responseText); }
 			else { d.resolve(JSON.parse(resp.responseText)); }
@@ -91,7 +92,6 @@ define(['require', 'orion/plugin', 'orion/xhr', 'orion/Deferred', 'orion/i18nUti
 				"Content-Type" : "application/json; charset=UTF-8"
 			},
 			timeout : 15000,
-			handleAs : "json", //$NON-NLS-0$
 			data: JSON.stringify(dataJSON)
 		}).then(function(resp) {
 			d.resolve(JSON.parse(resp.responseText));

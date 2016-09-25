@@ -31,10 +31,12 @@ define(['i18n!cfui/nls/messages', 'orion/Deferred', 'cfui/cfUtil',  'orion/urlUt
 		 */
 		buildDefaultPostError : function(defaultDecorateError){
 			return function(error, target){
-				error = defaultDecorateError(error, target);
-				window.parent.postMessage(JSON.stringify({pageService: "orion.page.delegatedUI", //$NON-NLS-0$
-					source: "org.eclipse.orion.client.cf.deploy.uritemplate", //$NON-NLS-0$
-					status: error}), "*"); //$NON-NLS-0$
+				if(error.HttpCode != 401 && error.HttpCode != 403){
+					error = defaultDecorateError(error, target);
+					window.parent.postMessage(JSON.stringify({pageService: "orion.page.delegatedUI", //$NON-NLS-0$
+						source: "org.eclipse.orion.client.cf.deploy.uritemplate", //$NON-NLS-0$
+						status: error}), "*"); //$NON-NLS-0$
+				}
 			};
 		},
 		
@@ -114,22 +116,6 @@ define(['i18n!cfui/nls/messages', 'orion/Deferred', 'cfui/cfUtil',  'orion/urlUt
 		},
 		
 		/**
-		 * Retrieves the default target by passing the given resource file
-		 * meta-data to the cfUtil.getDefaultTarget method.
-		 */
-		getDefaultTarget : function(fileClient, resource){
-			var clientDeferred = new Deferred();
-			fileClient.read(resource.ContentLocation, true).then(function(result){
-					mCfUtil.getDefaultTarget(result).then(
-						clientDeferred.resolve,
-						clientDeferred.reject
-					);
-				}, clientDeferred.reject);
-			
-			return clientDeferred;
-		},
-		
-		/**
 		 * Makes the current iframe draggable.
 		 */
 		makeDraggable : function(frameHolder){
@@ -190,19 +176,14 @@ define(['i18n!cfui/nls/messages', 'orion/Deferred', 'cfui/cfUtil',  'orion/urlUt
 			
 			var d = new Deferred();
 			showMessage(message);
-			
-			Deferred.all([
-			     mCfUtil.getTargets(preferences),
-			 	 WizardUtils.getDefaultTarget(fileClient, resource)
-			 ]).then(function(results){
-				 
-				 hideMessage();
-				 d.resolve({
-					 clouds : results[0],
-					 defaultTarget : results[1]
-				 });
-				 
-			 }, d.reject);
+
+			fileClient.read(resource.ContentLocation, true).then(
+				function(result){
+					mCfUtil.getTargets(preferences, result).then(function(result){
+					hideMessage();
+					d.resolve(result);
+				}, d.reject);
+			}, d.reject);
 			
 			return d;
 		}

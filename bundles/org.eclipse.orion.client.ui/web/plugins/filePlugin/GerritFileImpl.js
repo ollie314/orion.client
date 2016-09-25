@@ -14,7 +14,7 @@
 define(["orion/xhr", "orion/URITemplate", "orion/Deferred", "orion/URL-shim"], function(xhr, URITemplate, Deferred) {
 
 	// regex pattern for the file browser requests
-	var pathRegex = /.*\/git\/(\w+[%2F|\/]\w+)\/(browse|contents|list)(\/([^\/]+)(\/(.*))?)?/;
+	var pathRegex = /.*\/git\/([^\/]+)\/(browse|contents|list)(\/([^\/]+)(\/(.*))?)?/;
 
 	function GerritFileImpl(pluginURL, project) {
 		// url templates for the Git router service requests
@@ -186,6 +186,13 @@ define(["orion/xhr", "orion/URITemplate", "orion/Deferred", "orion/URL-shim"], f
 				//var _this = this;
 				var url = new URL(location);
 				var pathmatch = url.pathname.match(pathRegex);
+				// bad location format, does not match regex
+				if (!pathmatch || pathmatch.length == 0) {
+					var error = new Object();
+					error.Severity = "Error";
+					error.Message = "Unable to read location " + location + ".  Invalid URL format.";
+					throw error;
+				}
 				var ref = pathmatch[4] ? decodeURIComponent(pathmatch[4]) : pathmatch[4];
 				
 				var parents = this._getParents(location);
@@ -225,6 +232,13 @@ define(["orion/xhr", "orion/URITemplate", "orion/Deferred", "orion/URL-shim"], f
 							return true;
 						}
 					});
+					// no children matching location
+					if (!result) {
+						var error = new Object();
+						error.Severity = "Error";
+						error.Message = "Unable to read location " + location + ".  Resource does not exist.";
+						throw error;
+					}
 					return result;
 				});
 			}

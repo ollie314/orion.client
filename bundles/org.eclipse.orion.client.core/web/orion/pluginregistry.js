@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2010, 2014 IBM Corporation and others.
+ * Copyright (c) 2010, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -9,11 +9,11 @@
  * Contributors:
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
-
+/* eslint-disable missing-nls */
 /*eslint-env browser, amd*/
 /*global URL*/
 define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Deferred, EventTarget) {
-
+    
     function _equal(obj1, obj2) {
         var keys1 = Object.keys(obj1);
         var keys2 = Object.keys(obj2);
@@ -38,6 +38,19 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
         }
         return true;
     }
+    
+    function _mixin(target/*, source..*/) {
+		var hasOwnProperty = Object.prototype.hasOwnProperty;
+		for (var j = 1, len = arguments.length; j < len; j++) {
+			var source = arguments[j];
+			for (var key in source) {
+				if (hasOwnProperty.call(source, key)) {
+					target[key] = source[key];
+				}
+			}
+		}
+		return target;
+	}
 
     var httpOrHttps = new RegExp("^http[s]?", "i");
 
@@ -178,7 +191,7 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
     function Plugin(_url, _manifest, _internalRegistry) {
         var _this = this;
         _manifest = _manifest || {};
-        var _created = _manifest.created || new Date().getTime();
+        var _created = _manifest.created || Date.now();
         var _headers = _manifest.headers || {};
         var _services = _manifest.services || [];
         var _autostart = _manifest.autostart;
@@ -195,12 +208,11 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
 
         var _currentMessageId = 0;
         var _currentObjectId = 0;
-        //var _currentServiceId = 0; not supported yet...
 
         var _requestReferences = {};
         var _responseReferences = {};
         var _objectReferences = {};
-        var _serviceReferences = {};
+        var _serviceReferences;
 
 
         function _notify(message) {
@@ -228,12 +240,12 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 }
             });
 
-            var toString = Object.prototype.toString;
+            var toStr = Object.prototype.toString;
             message.params.forEach(function(param, i) {
-                if (toString.call(param) === "[object Object]" && !(param instanceof ObjectReference)) {
+                if (toStr.call(param) === "[object Object]" && !(param instanceof ObjectReference)) {
                     var candidate, methods;
                     for (candidate in param) {
-                        if (toString.call(param[candidate]) === "[object Function]") {
+                        if (toStr.call(param[candidate]) === "[object Function]") {
                             methods = methods || [];
                             methods.push(candidate);
                         }
@@ -263,7 +275,6 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
             } else {
                 console.log(error);
             }
-
         }
 
         function _callMethod(messageId, implementation, method, params) {
@@ -337,18 +348,22 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                         var service = _serviceReferences[message.serviceId];
                         if (!service) {
                             _throwError(message.id, "service not found");
-                        }
-                        if (method in service) {
-                            _callMethod(message.id, service, service[method], params);
-                        } else {
-                            _throwError(message.id, "method not found");
-                        }
+                        } else if (_isTrusted(service)) {
+                        	var serviceRegistry = _internalRegistry.serviceRegistry;
+	                        service = serviceRegistry.getService(service);
+	                        if (method in service) {
+	                            _callMethod(message.id, service, service[method], params);
+	                        } else {
+	                            _throwError(message.id, "method not found");
+	                        }
+                    	} else {
+                    		_throwError(message.id, "not trusted");
+                    	}
                     } else if ("objectId" in message) {
                         var object = _objectReferences[message.objectId];
                         if (!object) {
                             _throwError(message.id, "object not found");
-                        }
-                        if (method in object) {
+                        } else if (method in object) {
                             _callMethod(message.id, object, object[method], params);
                         } else {
                             _throwError(message.id, "method not found");
@@ -367,17 +382,20 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                         _channel.loading();
                     } else {
                         if ("plugin" === message.method) { //$NON-NLS-0$
-                        	_channel.connected();
+                            _channel.connected();
                             var manifest = message.params[0];
                             _update({
                                 headers: manifest.headers,
                                 services: manifest.services
                             }).then(function() {
-                            	if (_deferredLoad) {
-                                	_deferredLoad.resolve(_this);
+                                if (_deferredLoad) {
+                                    _deferredLoad.resolve(_this);
                                 }
                             });
-                        } else if ("timeout" === message.method) {
+                            if (manifest.updateRegistry) {
+                            	_updateRemoteRegistry();
+                        	}
+                        } else if ("timeout" === message.method || "error" === message.method) {
                             if (_deferredLoad) {
                                 _deferredLoad.reject(message.error);
                             }
@@ -385,14 +403,16 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                             throw new Error("Bad method: " + message.method);
                         }
                     }
-                } else {
+                } else if (message.id) {
                     var deferred = _responseReferences[String(message.id)];
-                    delete _responseReferences[String(message.id)];
-                    if (message.error) {
-                        var error = _internalRegistry.handleServiceError(_this, message.error);
-                        deferred.reject(error);
-                    } else {
-                        deferred.resolve(message.result);
+                    if (deferred) {
+	                    delete _responseReferences[String(message.id)];
+	                    if (message.error) {
+	                        var error = _internalRegistry.handleServiceError(_this, message.error);
+	                        deferred.reject(error);
+	                    } else {
+	                        deferred.resolve(message.result);
+	                    }
                     }
                 }
             } catch (e) {
@@ -468,6 +488,83 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 registration: registration,
                 proxy: serviceProxy
             };
+        }
+        
+        function _getPluginData() {
+            var services = [];
+            Object.keys(_serviceReferences).forEach(function(serviceId) {
+                var serviceReference = _serviceReferences[serviceId];
+                var properties = {};
+                serviceReference.getPropertyKeys().forEach(function(key) {
+                	properties[key] = serviceReference.getProperty(key);
+                });
+                ["service.id", "service.names", "objectClass", "__plugin__"].forEach(function(key) {
+	                delete properties[key];
+                });
+                var methods = [];
+                var serviceRegistry = _internalRegistry.serviceRegistry;
+                var implementation = serviceRegistry.getService(serviceReference);
+	            for (var method in implementation) {
+	                if (typeof implementation[method] === 'function') {
+	                    methods.push(method);
+	                }
+	            }
+                services.push({
+                    serviceId: String(serviceReference.getProperty('service.id')),
+                    names: serviceReference.getProperty('service.names'),
+                    methods: methods,
+                    properties: properties
+                });
+            });
+            return {
+                services: services
+            };
+        }
+        
+        function _isTrusted(serviceReference) {
+        	var pluginUrl = new URL(_url);
+        	// if plugin is from same origin of host page, it has access to all references
+        	if (pluginUrl.origin === location.origin) return true;
+        	var refUrl = serviceReference.getProperty("__plugin__");
+        	// if plugin is from same origin of reference, it has access to this reference
+        	return pluginUrl.origin === (refUrl ? new URL(refUrl) : location).origin;
+        }
+        
+        var _registerListener, _unregisterListener, _modifiedListerner;
+        function _updateRemoteRegistry() {
+        	if (!_serviceReferences) {
+        		_serviceReferences = {};
+        		var serviceRegistry = _internalRegistry.serviceRegistry;
+        		serviceRegistry.getServiceReferences().forEach(function(serviceReference) {
+		        	if (_isTrusted(serviceReference)) {
+		        		_serviceReferences[serviceReference.getProperty('service.id')] = serviceReference;
+	        		}
+        		});
+        		function updateReference(add, remove, evt) {
+        			var serviceReference = evt.serviceReference;
+		        	var id = serviceReference.getProperty('service.id');
+		        	if (!_serviceReferences[id] && _isTrusted(serviceReference)) {
+		        		if (add) _serviceReferences[id] = serviceReference;
+		        		if (remove) delete _serviceReferences[id];
+			        	_updateRemoteRegistry();
+		        	}
+		        }
+		        serviceRegistry.addEventListener("registered", _registerListener = updateReference.bind(null, true, false));
+		        serviceRegistry.addEventListener("unregistered", _unregisterListener = updateReference.bind(null, false, true));
+		        serviceRegistry.addEventListener("modified", _modifiedListerner = updateReference.bind(null, false, false));
+        	}
+    		_request({
+                method: "plugin",
+                params: [_getPluginData()]
+             });
+        }
+        
+        function _removeListeners() {
+    		var serviceRegistry = _internalRegistry.serviceRegistry;
+    		if (_registerListener) serviceRegistry.removeEventListener("registered", _registerListener);
+	        if (_unregisterListener) serviceRegistry.removeEventListener("unregistered", _unregisterListener);
+	        if (_modifiedListerner) serviceRegistry.removeEventListener("modified", _modifiedListerner);
+	        _registerListener = _unregisterListener = _modifiedListerner = null;
         }
 
         function _persist() {
@@ -560,24 +657,24 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
          * @function 
          */
         this.setParent = function(parent) {
-        	if (_parent !== parent) {
-        		_parent = parent;
-        		return _this.stop({
+            if (_parent !== parent) {
+                _parent = parent;
+                return _this.stop({
                     "transient": true
                 }).then(function() {
-					if ("started" === _autostart) {
-		                return _this.start({
-		                    "transient": true
-		                });
-					} else if ("lazy" === _autostart) {
-                		return _this.start({	
-                    		"lazy": true,
-							"transient": true
-						});
-            		}
-				});	
-			}
-			return new Deferred().resolve();
+                    if ("started" === _autostart) {
+                        return _this.start({
+                            "transient": true
+                        });
+                    } else if ("lazy" === _autostart) {
+                        return _this.start({    
+                            "lazy": true,
+                            "transient": true
+                        });
+                    }
+                });    
+            }
+            return new Deferred().resolve();
         };
 
         /**
@@ -599,7 +696,7 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
          */
         this.getProblemLoading = function() {
             if (_this._problemLoading){
-            	return true;
+                return true;
             }
             return false;
         };
@@ -652,6 +749,10 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                     _state = "starting";
                     _internalRegistry.dispatchEvent(new PluginEvent("lazy activation", _this));
                 }
+                var now = Date.now();
+		        if (!this.getLastModified() || now > this.getLastModified() + 86400000) { // 24 hours
+	                 return this.update();
+                }
                 return new Deferred().resolve();
             }
             
@@ -668,7 +769,7 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 _internalRegistry.dispatchEvent(new PluginEvent("started", _this));
                 _deferredStateChange = null;
                 deferredStateChange.resolve();
-            }, function() {
+            }, function(error) {
                 _deferredLoad = null;
                 _state = "stopping";
                 _internalRegistry.dispatchEvent(new PluginEvent("stopping", _this));
@@ -682,10 +783,10 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 _deferredStateChange = null;
                 _internalRegistry.dispatchEvent(new PluginEvent("stopped", _this));
                 _this._problemLoading = true;
-                deferredStateChange.reject(new Error("Failed to load plugin: " + _url));
+                deferredStateChange.reject(new Error("Failed to load plugin: " + _url + (error && error.message ? "\n    Reason: " + error.message : "")));
                 if (_this._default) {
-                	_lastModified = 0;
-                	_persist();
+                    _lastModified = 0;
+                    _persist();
                 }
             });
             return deferredStateChange.promise;
@@ -723,6 +824,7 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
             if (_channel) {
                 _internalRegistry.disconnect(_channel);
                 _channel = null;
+                _removeListeners();
             }
             _state = "resolved";
             _deferredStateChange = null;
@@ -733,24 +835,24 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
         };
 
         _update = function(input) {
-        	_this.problemLoading = null;
-        	
+            _this.problemLoading = null;
+            
             if (_state === "uninstalled") {
                 return new Deferred().reject(new Error("Plugin is uninstalled"));
             }
 
             if (!input) {
                 if (_lastModified === 0) {
-                    _lastModified = new Date().getTime();
+                    _lastModified = Date.now();
                     _persist();
                 }
                 return _internalRegistry.loadManifest(_url).then(_update, function() {
-                	_this._problemLoading = true;
-                	if (_this._default) {
-                		_lastModified = 0;
-                		_persist();
-                	}
-                	console.log("Failed to load plugin: " + _url);
+                    _this._problemLoading = true;
+                    if (_this._default) {
+                        _lastModified = 0;
+                        _persist();
+                    }
+                    console.log("Failed to load plugin: " + _url);
                 });
             }
 
@@ -764,7 +866,7 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
             if (input.lastModified) {
                 _lastModified = input.lastModified;
             } else {
-                _lastModified = new Date().getTime();
+                _lastModified = Date.now();
                 _persist();
             }
 
@@ -832,7 +934,7 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 _internalRegistry.dispatchEvent(new PluginEvent("updated", _this));
             });
         };
-
+        
         /**
          * Uninstalls this plugin.
          * @name orion.pluginregistry.Plugin#uninstall
@@ -854,6 +956,11 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
             return new Deferred().resolve();
         };
     }
+
+    var workerRegex = /Worker\.js$/;
+    var sharedWorkerRegex = /SharedWorker\.js$/;
+    var pluginHtml = "Plugin.html"; //$NON-NLS-0$
+    var workerJS = "Worker.js"; //$NON-NLS-0$
 
     /**
      * Dispatched when a plugin has been installed. The type of this event is <code>"installed"</code>.
@@ -933,6 +1040,7 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
         var _installing = {};
 
         var internalRegistry = {
+            serviceRegistry: serviceRegistry,
             registerService: serviceRegistry.registerService.bind(serviceRegistry),
             connect: function(url, handler, parent, timeout) {
                 var channel = {
@@ -940,7 +1048,12 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                     url: url
                 };
 
+                function log(state) {
+                    if (localStorage.pluginLogging) console.log(state + "(" + (Date.now() - channel._startTime) + "ms)=" + url); //$NON-NLS-1$ //$NON-NLS-0$
+                }
+
                 function sendTimeout(message) {
+                    log("timeout"); //$NON-NLS-0$
                     var error = new Error(message);
                     error.name = "timeout";
                     handler({
@@ -950,36 +1063,109 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 }
                 
                 timeout = timeout || _defaultTimeout;
-
-                var loadTimeout = setTimeout(sendTimeout.bind(null, "Load timeout for: " + url), timeout || 15000);
-                var iframe = document.createElement("iframe"); //$NON-NLS-0$
-                iframe.name = url + "_" + new Date().getTime();
-                iframe.src = url;
-                iframe.onload = function() {
-                    clearTimeout(loadTimeout);
-                    loadTimeout = setTimeout(sendTimeout.bind(null, "Plugin handshake timeout for: " + url), timeout || 5000);
+                
+                channel._updateTimeout = function() {
+                    var message, newTimeout;
+                    if (!this._connected && !this._closed) {
+                        if (this._handshake) {
+                            // For each plugin being loaded add 1000 ms extra time to the handshake timeout
+                            var extraTimeout = 0;
+                            _channels.forEach(function(c) {
+                                if (!c._connected && !c._closed) {
+                                    extraTimeout += 1000;
+                                }
+                            });
+                            message = "Plugin handshake timeout for: " + url;
+                           newTimeout = this._loading ? 5000 : (timeout || 60000) + extraTimeout;
+                        } else {
+                            message = "Plugin load timeout for: " + url;
+                            newTimeout = timeout || 15000;
+                        }
+                    }
+                    if (this._loadTimeout) clearTimeout(this._loadTimeout);
+                    this._loadTimeout = 0;
+                    if (newTimeout) this._loadTimeout = setTimeout(sendTimeout.bind(null, message), newTimeout);
                 };
-                iframe.sandbox = "allow-scripts allow-same-origin allow-forms"; //$NON-NLS-0$
-        		iframe.style.width = iframe.style.height = "100%"; //$NON-NLS-0$
-	        	iframe.frameBorder = 0;
-                (parent || _parent).appendChild(iframe);
-                channel.target = iframe.contentWindow;
+
+                var isWorker = !!(url.match(workerRegex) && typeof(Worker) !== "undefined");
+                var isSharedWorker = !!(url.match(sharedWorkerRegex) && typeof(SharedWorker) !== "undefined");
+                if ((!localStorage.useSharedWorkers || !isSharedWorker) && url.match(sharedWorkerRegex)) {
+                    url = url.replace(sharedWorkerRegex, workerJS);
+                    isSharedWorker = false;
+                }
+                if ((!localStorage.useWorkers || !isWorker) && url.match(workerRegex)) {
+                    url = url.replace(workerRegex, pluginHtml);
+                    isWorker = isSharedWorker = false;
+                }               
+
+                channel.url = url;
+                channel._updateTimeout();
+                channel._startTime = Date.now();
+                if (isWorker) {
+                    var worker;
+                    if (isSharedWorker) {
+                        worker = new SharedWorker(url);
+                        channel.target = worker.port;
+                        worker.port.start();
+                        channel._close = function() {
+                            worker.port.close();
+                        };
+                    } else {
+                        worker = new Worker(url);
+                        channel.target = worker;
+                        channel._close = function() {
+                            worker.terminate();
+                        };
+                    }
+                    channel.postMessage = function(message) {
+                        this.target.postMessage((this.useStructuredClone ? message : JSON.stringify(message)), []);
+                    };
+                    channel.target.addEventListener("message", function(evt) {
+                    	_channelHandler(channel, evt);
+                    });
+                } else {
+                   	var iframe = document.createElement("iframe"); //$NON-NLS-0$
+                    iframe.name = url + "_" + channel._startTime;
+                    iframe.src = url;
+                    iframe.onload = function() {
+                        log("handshake"); //$NON-NLS-0$
+                        channel._handshake = true;
+                        channel._updateTimeout();
+                    };
+                    iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-popups"; //$NON-NLS-0$
+                    iframe.style.width = iframe.style.height = "100%"; //$NON-NLS-0$
+                    iframe.frameBorder = 0;
+                    (parent || _parent).appendChild(iframe);
+                    channel.target = iframe.contentWindow;
+                    channel.postMessage = function(message) {
+                        this.target.postMessage((this.useStructuredClone ? message : JSON.stringify(message)), this.url);
+                    };
+                    channel._close = function() {
+                        if (iframe) {
+                            var frameParent = iframe.parentNode;
+                            if (frameParent) {
+                                frameParent.removeChild(iframe);
+                            }
+                            iframe = null;
+                        }
+                    }; 
+                }
                 channel.connected = function() {
-                	clearTimeout(loadTimeout);
+                    log("connected"); //$NON-NLS-0$
+                    this._connected = true;
+                    this._updateTimeout();
+                    
                 };
                 channel.loading = function() {
-                	clearTimeout(loadTimeout);
-                	loadTimeout = setTimeout(sendTimeout.bind(null, "Plugin handshake timeout for: " + url), 60000);
+                    log("loading"); //$NON-NLS-0$
+                    this._loading = true;
+                    this._updateTimeout();
                 };
                 channel.close = function() {
-                    clearTimeout(loadTimeout);
-                    if (iframe) {
-                    	var parent = iframe.parentNode;
-                        if (parent) {
-                        	parent.removeChild(iframe);
-                        }
-                        iframe = null;
-                    }
+                    log("closed"); //$NON-NLS-0$
+                    this._closed = true;
+                    this._updateTimeout();
+                    this._close();
                 };
                 _channels.push(channel);
                 return channel;
@@ -1006,11 +1192,22 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 }
                 _storage.removeItem("plugin." + plugin.getLocation());
             },
+            getPersisted: function(url) {
+            	var key = "plugin." + url;
+            	var manifest = _storage.getItem(key);
+            	if (manifest) {
+            		manifest = JSON.parse(manifest);
+            		if (manifest.created) {
+            			return manifest;
+            		}
+            	}
+            	return null;
+            },
             persist: function(url, manifest) {
                 _storage.setItem("plugin." + url, JSON.stringify(manifest)); //$NON-NLS-0$
             },
             postMessage: function(message, channel) {
-                channel.target.postMessage((channel.useStructuredClone ? message : JSON.stringify(message)), channel.url);
+                channel.postMessage(message);
             },
             dispatchEvent: function(event) {
                 try {
@@ -1032,10 +1229,12 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                         internalRegistry.disconnect(channel);
                         channel = null;
                         d.resolve(manifest);
-                    } else if ("timeout" === message.method) {
+                    } else if ("timeout" === message.method || "error" === message.method) {
                         internalRegistry.disconnect(channel);
                         channel = null;
                         d.reject(message.error);
+                    } else if ("loading" === message.method) {
+                        channel.loading();
                     }
                 });
                 return d.promise;
@@ -1103,24 +1302,27 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
 
         this.getState = internalRegistry.getState;
 
+		function _channelHandler(channel, event) {
+			try {
+                var message;
+                if (typeof channel.useStructuredClone === "undefined") {
+                    var useStructuredClone = typeof event.data !== "string"; //$NON-NLS-0$
+                    message = useStructuredClone ? event.data : JSON.parse(event.data);
+                    channel.useStructuredClone = useStructuredClone;
+                } else {
+                    message = channel.useStructuredClone ? event.data : JSON.parse(event.data);
+                }
+                channel.handler(message);
+            } catch (e) {
+                // not a valid message -- ignore it
+            }
+		}
 
-        function _messageHandler(event) { //$NON-NLS-0$
+        function _messageHandler(event) {
             var source = event.source;
             _channels.some(function(channel) {
                 if (source === channel.target) {
-                    try {
-                        var message;
-                        if (typeof channel.useStructuredClone === "undefined") {
-                            var useStructuredClone = typeof event.data !== "string"; //$NON-NLS-0$
-                            message = useStructuredClone ? event.data : JSON.parse(event.data);
-                            channel.useStructuredClone = useStructuredClone;
-                        } else {
-                            message = channel.useStructuredClone ? event.data : JSON.parse(event.data);
-                        }
-                        channel.handler(message);
-                    } catch (e) {
-                        // not a valid message -- ignore it
-                    }
+                    _channelHandler(channel, event);
                     return true; // e.g. break
                 }
             });
@@ -1132,56 +1334,43 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 return;
             }
             addEventListener("message", _messageHandler, false);
-            var storageKeys = [];
-            for (var i = 0, length = _storage.length; i < length; i++) {
-                storageKeys.push(_storage.key(i));
-            }
-            storageKeys.forEach(function(key) {
-                if (key.indexOf("plugin.") === 0) {
-                    var url = key.substring("plugin.".length);
-                    var manifest = JSON.parse(_storage.getItem(key));
-                    if (manifest.created) {
-                        _plugins.push(new Plugin(url, manifest, internalRegistry));
-                    }
-                }
-            });
-            _plugins.sort(function(a, b) {
-                return a._getCreated() < b._getCreated() ? -1 : 1;
-            });
             
             if (configuration.parent) {
-            	_parent = configuration.parent;
+                _parent = configuration.parent;
             } else {
-	            _parent = document.createElement("div"); //$NON-NLS-0$
-	            if (!configuration.visible) {
+                _parent = document.createElement("div"); //$NON-NLS-0$
+                if (!configuration.visible) {
                     _parent.style.display = "none"; //$NON-NLS-0$
                     _parent.style.visibility = "hidden"; //$NON-NLS-0$
                 }
-	            document.body.appendChild(_parent);
+                document.body.appendChild(_parent);
             }
 
             if (configuration.plugins) {
                 Object.keys(configuration.plugins).forEach(function(url) {
-                    url = _normalizeURL(url);
-                    //					if (!httpOrHttps.test(url)) {
-                    //						console.log("Illegal Plugin URL: " + url);
-                    //						return;
-                    //					}
-                    var plugin = this.getPlugin(url);
-                    if (!plugin) {
-                        var manifest = configuration.plugins[url];
-                        if (typeof manifest !== "object") {
-                        	manifest = {};
-                        }
-                        manifest.autostart = manifest.autostart || configuration.defaultAutostart || "lazy";
-                        plugin = new Plugin(url, manifest, internalRegistry);
-                        plugin._default = true;
-                        _plugins.push(plugin);
-                    } else {
-                    	plugin._default = true;
-                    }
+		            url = _normalizeURL(url);
+		            //                    if (!httpOrHttps.test(url)) {
+		            //                        console.log("Illegal Plugin URL: " + url);
+		            //                        return;
+		            //                    }
+		            var plugin = this.getPlugin(url);
+		            if (!plugin) {
+		                var manifest = configuration.plugins[url];
+		                if (typeof manifest !== "object") {
+		                	manifest = internalRegistry.getPersisted(url) || {};
+		                }
+		                manifest.autostart = manifest.autostart || configuration.defaultAutostart || "lazy";
+		                plugin = new Plugin(url, manifest, internalRegistry);
+		                plugin._default = true;
+		                _plugins.push(plugin);
+		            } else {
+		                plugin._default = true;
+		            }
                 }.bind(this));
             }
+            _plugins.sort(function(a, b) {
+                return a._getCreated() < b._getCreated() ? -1 : 1;
+            });
             _state = "starting";
         };
 
@@ -1199,27 +1388,8 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                 return new Deferred().reject("Cannot start framework. Framework is already " + _state + ".");
             }
             var deferreds = [];
-            var now = new Date().getTime();
             _plugins.forEach(function(plugin) {
                 var autostart = plugin._getAutostart();
-                if (plugin.getLastModified() === 0) {
-                    deferreds.push(plugin.update().then(function() {
-                        if ("started" === autostart) {
-                            return plugin.start({
-                                "transient": true
-                            });
-                        }
-                        if ("lazy" === autostart) {
-                            return plugin.start({
-                                "lazy": true,
-                                    "transient": true
-                            });
-                        }
-                        plugin._resolve();
-                    }));
-                    return;
-                }
-
                 if ("started" === autostart) {
                     deferreds.push(plugin.start({
                         "transient": true
@@ -1229,9 +1399,6 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
                         "lazy": true,
                             "transient": true
                     }));
-                    if (now > plugin.getLastModified() + 86400000) { // 24 hours
-                        plugin.update();
-                    }
                 } else {
                     plugin._resolve();
                 }
@@ -1263,13 +1430,13 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
             return Deferred.all(deferreds, function(e) {
                 console.log("PluginRegistry.stop " + e);
             }).then(function() {
-				if (!configuration.parent) {
-            		var parentNode = _parent.parentNode;
-            		if (parentNode) {
-		            	parentNode.removeChild(_parent);
-            		}
-            	}
-            	_parent = null;
+                if (!configuration.parent) {
+                    var parentNode = _parent.parentNode;
+                    if (parentNode) {
+                        parentNode.removeChild(_parent);
+                    }
+                }
+                _parent = null;
                 removeEventListener("message", _messageHandler);
                 _state = "resolved";
             });
@@ -1294,9 +1461,9 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
          */
         this.installPlugin = function(url, optManifest) {
             url = _normalizeURL(url);
-            //			if (!httpOrHttps.test(url)) {
-            //				return new Deferred().reject("Illegal Plugin URL: " + url);
-            //			}
+            //            if (!httpOrHttps.test(url)) {
+            //                return new Deferred().reject("Illegal Plugin URL: " + url);
+            //            }
             var plugin = this.getPlugin(url);
             if (plugin) {
                 return new Deferred().resolve(plugin);
@@ -1305,8 +1472,11 @@ define(["orion/Deferred", "orion/EventTarget", "orion/URL-shim"], function(Defer
             if (_installing[url]) {
                 return _installing[url];
             }
-
+            
             if (optManifest) {
+            	if (optManifest.autostart === "lazy") {
+	                optManifest = _mixin({}, internalRegistry.getPersisted(url), optManifest);
+            	}
                 plugin = new Plugin(url, optManifest, internalRegistry);
                 _plugins.push(plugin);
                 plugin._persist();

@@ -11,20 +11,12 @@
 /*eslint-env browser, amd*/
 /*global URL*/
 define(["orion/xhr", "orion/plugin", "orion/operation", "orion/Deferred", "orion/URL-shim", "domReady!"], function(xhr, PluginProvider, operation, Deferred) {
-	var temp = document.createElement('a');
-	temp.href = "../mixloginstatic/LoginWindow.html";
-	var login = temp.href;
-	var headers = {
-		name: "Orion Task Management Service",
-		version: "1.0",
-		description: "This plugin provides access to the tasks a user is currently running or ran recently, and provides management of those tasks.",
-		login: login
-	};
-
-	var provider = new PluginProvider(headers);
 
 	function makeParentRelative(location) {
 		try {
+			if (typeof window === "undefined") {
+				return location.substring(self.location.href.indexOf(self.location.host) + self.location.host.length);
+			}
 			if (window.location.host === parent.location.host && window.location.protocol === parent.location.protocol) {
 				return location.substring(parent.location.href.indexOf(parent.location.host) + parent.location.host.length);
 			}
@@ -34,13 +26,9 @@ define(["orion/xhr", "orion/plugin", "orion/operation", "orion/Deferred", "orion
 		return location;
 	}
 	
-	function makeAbsolute(location) {
-		temp.href = location;
-		return temp.href;
+	function makeAbsolute(loc) {
+		return new URL(loc, self.location.href).href;
 	}
-
-	temp.href = "../task";
-	var base = makeParentRelative(temp.href);
 	
 	function _normalizeLocations(data) {
 		if (data && typeof data === "object") {
@@ -55,73 +43,94 @@ define(["orion/xhr", "orion/plugin", "orion/operation", "orion/Deferred", "orion
 		}
 		return data;
 	}
+	
+	function connect() {
+		var login = new URL("../mixloginstatic/LoginWindow.html", self.location.href).href;
+		var headers = {
+			name: "Orion Task Management Service",
+			version: "1.0",
+			description: "This plugin provides access to the tasks a user is currently running or ran recently, and provides management of those tasks.",
+			login: login
+		};
+		var pluginProvider = new PluginProvider(headers);
+		registerServiceProviders(pluginProvider);
+		pluginProvider.connect();
+	}
 
-	// testing that command service handles image-less actions properly
-	provider.registerService("orion.core.operation", {
-		getOperations: function(options) {
-			var url = new URL(base, window.location);
-			if (options && typeof options === "object") {
-				Object.keys(options).forEach(function(param) {
-					url.query.set(param, options[param]);
-				});
-			}
-			return xhr("GET", url.href, {
-				headers: {
-					"Orion-Version": "1"
-				},
-				timeout: options.Longpolling ? 70000 : 15000
-			}).then(function(result) {
-				result = result.response ? JSON.parse(result.response) : null;
-				_normalizeLocations(result);
-				return result;
-			});
-		},
-		getOperation: function(taskLocation) {
-			return operation.handle(taskLocation);
-		},
-		removeCompletedOperations: function() {
-			return xhr("DELETE", base, {
-				headers: {
-					"Orion-Version": "1"
-				},
-				timeout: 15000
-			}).then(function(result) {
-				result = result.response ? JSON.parse(result.response) : null;
-				_normalizeLocations(result);
-				return result;
-			});
-		},
-		removeOperation: function(taskLocation) {
-			var clientDeferred = new Deferred();
-			xhr("DELETE", taskLocation, {
-				headers: {
-					"Orion-Version": "1"
-				},
-				timeout: 15000
-			}).then(function(result) {
-				result = result.response ? JSON.parse(result.response) : null;		
-				_normalizeLocations(result);
-				clientDeferred.resolve(result);
-			}, function(error){
-				var errorMessage = error;
-				if(error.responseText){
-					errorMessage = error.responseText;
-					try{
-						errorMessage = JSON.parse(error.responseText);
-					}catch(e){
-						//ignore
-					}
+	function registerServiceProviders(provider) {
+		var base = makeParentRelative(new URL("../task", self.location.href).href);
+	
+		// testing that command service handles image-less actions properly
+		provider.registerService("orion.core.operation", {
+			getOperations: function(options) {
+				var url = new URL(base, window.location);
+				if (options && typeof options === "object") {
+					Object.keys(options).forEach(function(param) {
+						url.query.set(param, options[param]);
+					});
 				}
-				if(errorMessage.Message)
-					clientDeferred.reject(errorMessage);
-				else
-					clientDeferred.reject({Severity: "Error", Message: errorMessage});
-			});
-			return clientDeferred;
-		}
-	}, {
-		name: "Tasks",
-		pattern: base
-	});
-	provider.connect();
+				return xhr("GET", url.href, {
+					headers: {
+						"Orion-Version": "1"
+					},
+					timeout: options.Longpolling ? 70000 : 15000
+				}).then(function(result) {
+					result = result.response ? JSON.parse(result.response) : null;
+					_normalizeLocations(result);
+					return result;
+				});
+			},
+			getOperation: function(taskLocation) {
+				return operation.handle(taskLocation);
+			},
+			removeCompletedOperations: function() {
+				return xhr("DELETE", base, {
+					headers: {
+						"Orion-Version": "1"
+					},
+					timeout: 15000
+				}).then(function(result) {
+					result = result.response ? JSON.parse(result.response) : null;
+					_normalizeLocations(result);
+					return result;
+				});
+			},
+			removeOperation: function(taskLocation) {
+				var clientDeferred = new Deferred();
+				xhr("DELETE", taskLocation, {
+					headers: {
+						"Orion-Version": "1"
+					},
+					timeout: 15000
+				}).then(function(result) {
+					result = result.response ? JSON.parse(result.response) : null;		
+					_normalizeLocations(result);
+					clientDeferred.resolve(result);
+				}, function(error){
+					var errorMessage = error;
+					if(error.responseText){
+						errorMessage = error.responseText;
+						try{
+							errorMessage = JSON.parse(error.responseText);
+						}catch(e){
+							//ignore
+						}
+					}
+					if(errorMessage.Message)
+						clientDeferred.reject(errorMessage);
+					else
+						clientDeferred.reject({Severity: "Error", Message: errorMessage});
+				});
+				return clientDeferred;
+			}
+		}, {
+			name: "Tasks",
+			pattern: base
+		});
+	}
+
+	return {
+		connect: connect,
+		registerServiceProviders: registerServiceProviders
+	};
 });

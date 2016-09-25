@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2012, 2013 IBM Corporation and others.
+ * Copyright (c) 2012, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made
  * available under the terms of the Eclipse Public License v1.0
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
@@ -245,7 +245,7 @@ define(["require", "i18n!orion/shell/nls/messages", "orion/bootstrap", "orion/co
 
 	function computeEditURL(node) {
 		var openWithCommand = mExtensionCommands.getOpenWithCommand(commandRegistry, node);
-		if (openWithCommand) {
+		if (openWithCommand && typeof(openWithCommand.hrefCallback) === 'function') {
 			return openWithCommand.hrefCallback({items: node});
 		}
 		return null;
@@ -449,9 +449,9 @@ define(["require", "i18n!orion/shell/nls/messages", "orion/bootstrap", "orion/co
 				function(plugin) {
 					plugin.start({lazy:true}).then(
 						function() {
-							preferences.getPreferences("/plugins").then(function(plugins) { //$NON-NLS-0$
-								plugins.put(url, true);
-							});
+							var data = {};
+							data[url] = true;
+							preferences.put("/plugins", data); //$NON-NLS-1$
 							result.resolve(messages.Succeeded);
 						},
 						function(error) {
@@ -490,14 +490,7 @@ define(["require", "i18n!orion/shell/nls/messages", "orion/bootstrap", "orion/co
 			}
 			args.plugin.uninstall().then(
 				function() {
-					preferences.getPreferences("/plugins").then( //$NON-NLS-0$
-						function(plugins) {
-							var locations = args.plugin.getPluginLocations();
-							for (var i = 0; i < locations.length; i++) {
-								plugins.remove(locations[i]);
-							}
-						}.bind(this) /* force a sync */
-					);
+					preferences.remove("/plugins", args.plugin.getPluginLocations()); //$NON-NLS-1$
 					result.resolve(messages.Succeeded);
 				},
 				function(error) {
@@ -509,11 +502,7 @@ define(["require", "i18n!orion/shell/nls/messages", "orion/bootstrap", "orion/co
 			var plugin = pluginRegistry.getPlugin(location);
 			plugin.uninstall().then(
 				function() {
-					preferences.getPreferences("/plugins").then( //$NON-NLS-0$
-						function(plugins) {
-							plugins.remove(location);
-						}.bind(this) /* force a sync */
-					);
+					preferences.remove("/plugins", location); //$NON-NLS-1$
 					result.resolve(messages.Succeeded);
 				},
 				function(error) {

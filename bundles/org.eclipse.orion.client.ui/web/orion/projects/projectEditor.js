@@ -12,6 +12,7 @@
 define([
 	'i18n!orion/edit/nls/messages',
 	'orion/i18nUtil',
+	'orion/util',
 	'orion/URITemplate',
 	'orion/webui/littlelib',
 	'orion/Deferred',
@@ -21,7 +22,7 @@ define([
 	'orion/explorers/explorer',
 	'orion/section',
 	'orion/webui/tooltip'
-], function(messages, i18nUtil, URITemplate, lib, Deferred, objects, mProjectCommands, PageLinks, mExplorer, mSection, mTooltip) {
+], function(messages, i18nUtil, util, URITemplate, lib, Deferred, objects, mProjectCommands, PageLinks, mExplorer, mSection, mTooltip) {
 
 	var ID_COUNT = 0;
 
@@ -330,7 +331,10 @@ define([
 			this.node = node;
 			this.node.className = "orionProject";
 			this.projectData = projectData;
-
+			if (util.isElectron) {
+				this.node.style.display = "none";
+			}
+			
 			function renderSections(sectionsOrder, sectionNames){
 				sectionNames = sectionNames || {};
 				sectionsOrder.forEach(function(sectionName){
@@ -357,9 +361,9 @@ define([
 		}
 
 			var sectionsOrder = ["projectInfo", "additionalInfo", "dependencies"];
-			this.preferences.getPreferences("/sectionsOrder").then(function(sectionsOrderPrefs){
-				sectionsOrder = sectionsOrderPrefs.get("projectView") || sectionsOrder;
-				var sectionsNames = sectionsOrderPrefs.get("projectViewNames") || [];
+			this.preferences.get("/sectionsOrder").then(function(sectionsOrderPrefs){
+				sectionsOrder = sectionsOrderPrefs["projectView"] || sectionsOrder;
+				var sectionsNames = sectionsOrderPrefs["projectViewNames"] || [];
 				renderSections.apply(this, [sectionsOrder, sectionsNames]);
 			}.bind(this), function(error){
 				renderSections.apply(this, [sectionsOrder, {}]);

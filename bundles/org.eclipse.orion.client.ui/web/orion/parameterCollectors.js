@@ -11,8 +11,8 @@
  *******************************************************************************/
 /*eslint-env browser, amd*/
 
-define(['i18n!orion/nls/messages', 'orion/webui/littlelib'], 
-        function(messages, lib) {
+define(['i18n!orion/nls/messages', 'orion/webui/littlelib', 'orion/bidiUtils'], 
+        function(messages, lib, bidiUtils) {
 
 	
 	/**
@@ -206,12 +206,23 @@ define(['i18n!orion/nls/messages', 'orion/webui/littlelib'],
 						lib.stop(event);
 					}
 				};
+
+				var makeButton = function(text, parent) {
+					var button = document.createElement("button"); //$NON-NLS-0$
+					parent.appendChild(button);
+					if (text) {
+						button.appendChild(document.createTextNode(text)); //$NON-NLS-0$
+					}
+					button.classList.add("dismissButton"); //$NON-NLS-0$
+					return button;
+				};
+
 				var parameters = commandInvocation.parameters;
 				
 				if (parameters.message) {
 					var label = document.createElement("div"); //$NON-NLS-0$
 					label.classList.add("parameterMessage"); //$NON-NLS-0$
-					label.textContent = parameters.message;
+					label.textContent = typeof parameters.message === "function" ? parameters.message(commandInvocation) : parameters.message;
 					parameterArea.appendChild(label);
 				}
 				
@@ -233,9 +244,10 @@ define(['i18n!orion/nls/messages', 'orion/webui/littlelib'],
 							field = document.createElement("textarea"); //$NON-NLS-0$
 							field.rows = parm.lines;
 							field.type = "textarea"; //$NON-NLS-0$
-							field.id = id;
+							field.id = id;							
 							parent.appendChild(field);
 						}
+						bidiUtils.initInputField(field);
 					} else if (parm.type === "boolean") { //$NON-NLS-0$
 						if (!field) {
 							field = document.createElement("input"); //$NON-NLS-0$
@@ -247,16 +259,26 @@ define(['i18n!orion/nls/messages', 'orion/webui/littlelib'],
 						if (parm.value) {
 							field.checked = true;
 						}
+					} else if (parm.type === "button") { //$NON-NLS-0$
+						if (!field) {
+							field = makeButton(parm.value || "", parent);
+							field.id = id;
+						} else {
+							if (parm.value) {
+								field.value = parm.value;
+							}
+						}
 					} else {
 						if (!field) {
 							field = document.createElement("input"); //$NON-NLS-0$
 							field.type = parm.type;
-							field.id = id;
+							field.id = id;							
 							parent.appendChild(field);
 						}
 						if (parm.value) {
 							field.value = parm.value;
 						}
+						bidiUtils.initInputField(field);
 					}
 					field.classList.add("parameterInput"); //$NON-NLS-0$
 					// for fun
@@ -289,16 +311,6 @@ define(['i18n!orion/nls/messages', 'orion/webui/littlelib'],
 					if (collector._collectAndCall(commandInvocation, parameterArea)) {
 						localClose();
 					}
-				};
-
-				var makeButton = function(text, parent) {
-					var button = document.createElement("button"); //$NON-NLS-0$
-					parent.appendChild(button);
-					if (text) {
-						button.appendChild(document.createTextNode(text)); //$NON-NLS-0$
-					}
-					button.classList.add("dismissButton"); //$NON-NLS-0$
-					return button;
 				};
 				
 				if (commandInvocation.parameters.hasOptionalParameters()) {

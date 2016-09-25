@@ -10,8 +10,8 @@
  ******************************************************************************/
 /*eslint-env browser, amd*/
 define(['i18n!orion/settings/nls/messages', 'require', 'orion/commands', 'orion/git/gitPreferenceStorage', 'orion/git/gitConfigPreference', 'orion/webui/littlelib', 'orion/objects', 'orion/i18nUtil',
-		'orion/widgets/settings/Subsection', 'orion/widgets/input/SettingsTextfield', 'orion/widgets/input/SettingsCheckbox', 'orion/widgets/input/SettingsCommand'
-		], function(messages, require, mCommands, GitPreferenceStorage, GitConfigPreference, lib, objects, i18nUtil, Subsection, SettingsTextfield, SettingsCheckbox, SettingsCommand) {
+		'orion/widgets/settings/Subsection', 'orion/widgets/input/SettingsTextfield', 'orion/widgets/input/SettingsCheckbox', 'orion/widgets/input/SettingsCommand', 'orion/util'
+		], function(messages, require, mCommands, GitPreferenceStorage, GitConfigPreference, lib, objects, i18nUtil, Subsection, SettingsTextfield, SettingsCheckbox, SettingsCommand, util) {
 
 	function GitSettings(options, node) {
 		objects.mixin(this, options);
@@ -71,7 +71,7 @@ define(['i18n!orion/settings/nls/messages', 'require', 'orion/commands', 'orion/
 					} 
 				)
 			];
-			var gitSection = new Subsection( {sectionName:messages["Git Config"], parentNode: this.sections, children: this.gitFields } );
+			var gitSection = new Subsection( {sectionName:messages["Git Config"], parentNode: this.sections, children: this.gitFields, additionalCssClass: 'git-setting-header'} );
 			gitSection.show();
 			
 			/* - git select all -------------------------------------------------- */
@@ -80,15 +80,22 @@ define(['i18n!orion/settings/nls/messages', 'require', 'orion/commands', 'orion/
 					postChange: this.update.bind(this)
 				} 
 			)];
-			var gitSection2 = new Subsection( {sectionName:messages["GitWorkDir"], parentNode: this.sections, children: this.gitAlwaysSelect } );
+			var gitSection2 = new Subsection( {sectionName:messages["GitWorkDir"], parentNode: this.sections, children: this.gitAlwaysSelect, additionalCssClass: 'git-setting-header'} );
 			gitSection2.show();
 			
 			//--------- git credentials -------------------------------
-			this.gitCredentialsFields = [ new SettingsCheckbox( 
-				{	fieldlabel:messages["Enable Storage"], 
-					postChange: this.updateGitCredentials.bind(this)
-				} 
-			) ];
+			this.gitCredentialsFields = [];
+			var gitCredentialsFieldsDefaultLength;
+			if(!util.isElectron){
+				this.gitCredentialsFields = [ new SettingsCheckbox( 
+					{	fieldlabel:messages["Enable Storage"], 
+						postChange: this.updateGitCredentials.bind(this)
+					} 
+				) ];
+				gitCredentialsFieldsDefaultLength = 1;
+			}else{
+				gitCredentialsFieldsDefaultLength= 0;
+			}
 			var gitCredentialsSection;
 			var that = this;
 			
@@ -106,7 +113,7 @@ define(['i18n!orion/settings/nls/messages', 'require', 'orion/commands', 'orion/
 					gitPreferenceStorage.remove(repository).then(
 						function(){
 							messageService.setProgressResult(i18nUtil.formatMessage(messages["DeletedGitMsg"], [repository]));
-							that.gitCredentialsFields[keyIndex+1].destroy();
+							that.gitCredentialsFields[keyIndex + gitCredentialsFieldsDefaultLength].destroy();
 						}
 					);
 				},
@@ -121,15 +128,14 @@ define(['i18n!orion/settings/nls/messages', 'require', 'orion/commands', 'orion/
 			gitPreferenceStorage.getRepositories().then(
 				function(repositories){
 					for(var i=0; i<repositories.length; ++i){
-						var SettingsCommand = new SettingsCommand( {keyIndex: i, fieldlabel: repositories[i], commandService: that.commandService, scopeId: "repositoryItemCommands"} );
-						that.gitCredentialsFields.push(SettingsCommand);
+						var settingsCommand = new SettingsCommand( {keyIndex: i, fieldlabel: repositories[i], commandService: that.commandService, scopeId: "repositoryItemCommands"} );
+						that.gitCredentialsFields.push(settingsCommand);
 					}
 					
-					gitCredentialsSection = new Subsection( {sectionName: messages["Git Credentials Storage"], parentNode: that.sections, children: that.gitCredentialsFields} ); //$NON-NLS-0$
+					gitCredentialsSection = new Subsection( {sectionName: messages["Git Credentials Storage"], parentNode: that.sections, children: that.gitCredentialsFields, additionalCssClass: 'git-setting-header'} ); //$NON-NLS-0$
 					gitCredentialsSection.show();		
 				}
 			);
-			
 		},
 		
 		update: function(){

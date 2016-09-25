@@ -2,11 +2,13 @@
 .textviewTooltip {
 	font-family: "Consolas", "Monaco", "Vera Mono", monospace;
 	font-size: 12px;
-	background-color: #4A4A4A;
-	color: #DADADA;
+	background-color: #3B4B54; /* Must match the quickfix command button border color */
+	color: #FAFAFA;
 	padding: 8px;
+	/* The tooltip initial size explicitly counts for padding size, border-box sizing breaks this */
+	box-sizing: content-box;
 	border-radius: 3px;
-	z-index: 100;
+	z-index: 101;
 	position: fixed;
 	overflow: hidden;
 }
@@ -34,12 +36,22 @@
 
 /* Modify the html elements that the markdown renderer creates */
 .textviewTooltip a {
-	color: rgb(187, 187, 187);
+	color: #7CC7FF;
 }
 .textviewTooltip h3 {
-	-webkit-margin-before: 0;
+	-webkit-margin-before: 0; /* MarkD renderer uses webkit specific tags */
+	margin-top: 0;
 }
-.textviewTooltip em {
+.textviewTooltip p:first-of-type {
+	-webkit-margin-before: 0; /* MarkD renderer uses webkit specific tags */
+	margin-top: 0;
+	-webkit-margin-after: 0; /* MarkD renderer uses webkit specific tags */
+	margin-bottom: 0;
+}
+.textviewTooltip p {
+	word-wrap: break-word;
+}
+.textviewTooltip multi_anno {
 	font-style: normal;
 	font-weight: bold;
 }
@@ -60,18 +72,37 @@
 	padding-left: 3px;
 	vertical-align: middle;
 }
+.textviewTooltip .hoverTooltipTitle {
+	font-weight: normal;
+}
+.textviewTooltip .quickFixList { /* Styling quickfixes */
+	margin-top: 5px;
+}
 .textviewTooltip .commandButton { /* Styling quickfixes */
-	border: 0;
+	border: 1px solid #325C80;
 	background-color: inherit;
-	color: rgb(187, 187, 187);
+	color: white;
 }
 .textviewTooltip .commandButton:not(.dropdownTrigger){ /* In certain themes command buttons are set to all caps */
-  text-transform: initial; 
+	text-transform: initial; 
+}
+.textviewTooltip .commandList > li {
+	margin: 0;
+}
+/* Reuse font from command buttons but no border */
+.textviewTooltip .quickfixAllParameter {
+	margin-bottom: 4px;
+	vertical-align: middle;
+	font-weight: normal;
+	font-family: "HelveticaNeue", "Helvetica Neue", "HelveticaNeueRoman", "HelveticaNeue-Roman", "Helvetica Neue Roman", 'TeXGyreHerosRegular', "Helvetica", "Tahoma", "Geneva", "Arial", sans-serif;
 }
 
 /* Styles for custom behaviour */
-.textViewTooltipAllowResize {
+.textViewTooltipOnFocus {
 	resize: both;
+	overflow: auto;
+}
+.textViewTooltipOnHover {
 	overflow: auto;
 }
 

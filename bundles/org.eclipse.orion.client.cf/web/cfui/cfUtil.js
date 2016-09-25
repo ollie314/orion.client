@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2013, 2014 IBM Corporation and others.
+ * Copyright (c) 2013, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made
  * available under the terms of the Eclipse Public License v1.0
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
@@ -25,14 +25,19 @@ define(['i18n!cfui/nls/messages', 'orion/Deferred', 'orion/i18nUtil', 'orion/URI
 	return {
 
 		getTargets : function(preferences) {
-			return preferences.getPreferences('/cm/configurations').then(function(settings){ //$NON-NLS-0$
-				var cloud = settings.get("org.eclipse.orion.client.cf.settings"); //$NON-NLS-0$
+			return preferences.get('/cm/configurations').then(function(settings){ //$NON-NLS-0$
+				var cloud = settings["org.eclipse.orion.client.cf.settings"]; //$NON-NLS-0$
 				if (cloud && cloud.targetUrl){
-					var target = {};
-					target.Url = cloud.targetUrl;
+					var Target = {};
+					Target.clouds = [];
+					var newTarget = {}
+					newTarget.Url = cloud.targetUrl;
+					newTarget.Name = cloud.targetUrl;
 					if (cloud.manageUrl)
-						target.ManageUrl = cloud.manageUrl;
-					return [target];
+						newTarget.ManageUrl = cloud.manageUrl;
+					
+					Target.clouds.push(newTarget);
+					return Target;
 				}
 				return handleNoCloud();
 			}, handleNoCloud);
@@ -48,7 +53,7 @@ define(['i18n!cfui/nls/messages', 'orion/Deferred', 'orion/i18nUtil', 'orion/URI
 			return messages["deploy.enterCredentials"];
 		},
 		
-		prepareLaunchConfigurationContent : function(configName, target, appName, appPath, instrumentation, devMode){
+		prepareLaunchConfigurationContent : function(configName, target, appName, appPath, instrumentation){
 			var deferred = new Deferred();
 
 			var launchConf = {
@@ -72,10 +77,6 @@ define(['i18n!cfui/nls/messages', 'orion/Deferred', 'orion/i18nUtil', 'orion/URI
 			/* additional configuration */
 			if(instrumentation){
 				launchConf.ToSave.Parameters.Instrumentation = instrumentation;
-			}
-
-			if(devMode){
-				launchConf.ToSave.Parameters.DevMode = devMode;
 			}
 
 			deferred.resolve(launchConf);
@@ -126,6 +127,13 @@ define(['i18n!cfui/nls/messages', 'orion/Deferred', 'orion/i18nUtil', 'orion/URI
 				} else if (err.error_code === "CF-TargetNotSet"){ //$NON-NLS-0$
 					var cloudSettingsPageUrl = new URITemplate("{+OrionHome}/settings/settings.html#,category=cloud").expand({OrionHome : PageLinks.getOrionHome()}); //$NON-NLS-0$
 					error.Message = i18Util.formatMessage(messages["setUpYourCloud.Go"], cloudSettingsPageUrl);
+
+				} else if (err.error_code === "ServiceNotFound"){
+					if(target.ManageUrl){
+						var redirectToDashboard = target.ManageUrl;
+						var serviceName = err.metadata.service;
+						error.Message = i18Util.formatMessage(messages["service${0}NotFoundsetUpYourService.Go${1}"], serviceName, redirectToDashboard);
+					}
 				}
 			}
 

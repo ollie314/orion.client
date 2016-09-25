@@ -1,4 +1,4 @@
-/*jslint node:true*/
+/*eslint-env node*/
 var _path = require("path"),
     utilFactory = require("./build/utils");
 module.exports = function(grunt) {
@@ -126,17 +126,6 @@ module.exports = function(grunt) {
 						replacement: "requirejs/require.min.js"
 					}]
 				}
-			},
-			orionclient: {
-				files: {
-					"index.js": "index.js"
-				},
-				options: {
-					replacements: [{
-						pattern: /(ORION_CLIENT.+)['""]\.\.\/\.\.\/['"]/,
-						replacement: "$1'./lib/orion.client/'"
-					}]
-				}
 			}
 		},
 		simplemocha: {
@@ -163,6 +152,10 @@ module.exports = function(grunt) {
 	grunt.loadNpmTasks("grunt-simple-mocha");
 	grunt.loadNpmTasks("grunt-string-replace");
 
+	grunt.registerTask("printBuild", function() {
+		grunt.log.writeln("Using build file", JSON.stringify(grunt.config("requirejs.compile.options"), null, 2));
+	});
+
 	grunt.registerMultiTask("checkDirs", "Check files/dirs exist", function() {
 		this.filesSrc.forEach(function(filepath) {
 			grunt.verbose.write("Checking existence of " + filepath + "...");
@@ -173,7 +166,8 @@ module.exports = function(grunt) {
 	});
 
 	grunt.registerTask("test", ["simplemocha"]);
-	grunt.registerTask("optimize", ["copy:stage", "requirejs", "string-replace", "copy:unstage"]);
+	grunt.registerTask("optimize", ["printBuild", "copy:stage", "requirejs", "string-replace", "copy:unstage"]);
 	grunt.registerTask("default", ["checkDirs", "clean", "copy:orionclient", "optimize", "test"]);
+	grunt.registerTask("notest", ["checkDirs", "clean", "copy:orionclient", "optimize"]);
 	grunt.registerTask("nomin",   ["checkDirs", "clean", "copy:orionclient", "string-replace:orionclient", "test"]);
 };

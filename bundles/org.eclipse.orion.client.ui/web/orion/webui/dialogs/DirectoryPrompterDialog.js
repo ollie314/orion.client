@@ -9,8 +9,8 @@
  * Contributors: IBM Corporation - initial API and implementation
  ******************************************************************************/
 /*eslint-env browser, amd*/
-define(['i18n!orion/widgets/nls/messages', 'orion/webui/dialog', 'orion/fileUtils', 'orion/selection', 'orion/explorers/explorer', 'orion/explorers/explorer-table'], 
-function(messages, dialog, mFileUtils, mSelection, mExplorer, mExplorerTable) {
+define(['i18n!orion/widgets/nls/messages', 'orion/webui/dialog', 'orion/fileUtils', 'orion/selection', 'orion/explorers/explorer', 'orion/explorers/explorer-table', 'orion/bidiUtils'], 
+function(messages, dialog, mFileUtils, mSelection, mExplorer, mExplorerTable, bidiUtils) {
 
 	function DirectoryPrompterRenderer (options, explorer) {
 		this.explorer = explorer;
@@ -25,11 +25,16 @@ function(messages, dialog, mFileUtils, mSelection, mExplorer, mExplorerTable) {
 		var col = document.createElement("td"); //$NON-NLS-0$
 		tableRow.appendChild(col);
 		var span = document.createElement("span"); //$NON-NLS-0$
-		span.id = tableRow.id+"navSpan"; //$NON-NLS-0$
+		span.id = this.explorer.model.getId(item);
+		//span.id = tableRow.id+"navSpan"; //$NON-NLS-0$
 		col.appendChild(span);
 		span.className = "mainNavColumn singleNavColumn"; //$NON-NLS-0$
 		this.getExpandImage(tableRow, span);
-		span.appendChild(document.createTextNode(item.Name)); 
+		var itemName = item.Name;
+		if (bidiUtils.isBidiEnabled()) {
+			itemName = bidiUtils.enforceTextDirWithUcc(itemName);
+		}
+		span.appendChild(document.createTextNode(itemName));		
 	};
 
 	/**
@@ -56,7 +61,9 @@ function(messages, dialog, mFileUtils, mSelection, mExplorer, mExplorerTable) {
 		this.modal = true;
 		this.buttons = [{text: messages['OK'], isDefault: true, callback: this.done.bind(this)}]; 
 		this.customFocus = true;
+		this.root = options.root||"/";
 		this._fileClient = options.fileClient;
+		this._targetFolder = options.targetFolder;
 		this._serviceRegistry = options.serviceRegistry;
 		this._message = options.message || "";
 		this._func = options.func;
@@ -65,7 +72,7 @@ function(messages, dialog, mFileUtils, mSelection, mExplorer, mExplorerTable) {
 	
 	DirectoryPrompterDialog.prototype._bindToDom = function(parent) {
 		// TODO this is assuming a particular file system
-		this.loadFolderList("/");	// workspace root //$NON-NLS-0$
+		this.loadFolderList(this.root);	// workspace root //$NON-NLS-0$
 		if (this._message) {
 			this.$message.appendChild(document.createTextNode(this._message));
 		} else {
@@ -76,13 +83,20 @@ function(messages, dialog, mFileUtils, mSelection, mExplorer, mExplorerTable) {
 		
 	DirectoryPrompterDialog.prototype.loadFolderList = function(path) {
 		path = mFileUtils.makeRelative(path);
+		if(this._targetFolder) {
+			path = this._fileClient.fileServiceRootURL(this._targetFolder.Location);
+		}
 		this.selection = new mSelection.Selection(this._serviceRegistry, "orion.directoryPrompter.selection"); //$NON-NLS-0$
 
 		this.explorer = new mExplorerTable.FileExplorer({treeRoot: {children:[]}, selection: this.selection, serviceRegistry: this._serviceRegistry,
 				fileClient: this._fileClient, parentId: "directoryTree", excludeFiles: true, rendererFactory: function(explorer) {  //$NON-NLS-0$
 					return new DirectoryPrompterRenderer({checkbox: false, singleSelection: true, treeTableClass: "directoryPrompter" }, explorer);   //$NON-NLS-0$
 				}}); //$NON-NLS-0$
-		this.explorer.loadResourceList(path, true, null);
+		this.explorer.loadResourceList(path, true, null).then(function() {
+			if(this._targetFolder) {
+				this.explorer.reveal(this._targetFolder);
+			}
+		}.bind(this));
 	};
 		
 	DirectoryPrompterDialog.prototype.done = function() {

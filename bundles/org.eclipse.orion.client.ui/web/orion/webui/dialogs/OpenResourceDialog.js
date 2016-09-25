@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2010, 2013 IBM Corporation and others.
+ * Copyright (c) 2010, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -11,8 +11,177 @@
  *     Andy Clement (vmware) - bug 344614
  *******************************************************************************/
 /*eslint-env browser, amd*/
-define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion/contentTypes', 'require', 'orion/webui/littlelib', 'orion/util', 'orion/webui/dialog', 'orion/Deferred'], 
-		function(messages, mSearchCrawler, mContentTypes, require, lib, util, dialog, Deferred) {
+/*global define document console window*/
+define([
+	'i18n!orion/widgets/nls/messages', 
+	'i18n!orion/search/nls/messages',
+	'orion/extensionCommands', 
+	'orion/i18nUtil', 
+	'orion/bidiUtils',
+	'orion/searchUtils', 
+	'orion/explorers/navigatorRenderer', 
+	'orion/contentTypes', 
+	'require', 
+	'orion/webui/littlelib', 
+	'orion/util', 
+	'orion/webui/dialog', 
+	'orion/metrics', 
+	'orion/Deferred'
+], function(messages, searchMSG, extensionCommands, i18nUtil, bidiUtils, mSearchUtils, navigatorRenderer, mContentTypes, require, lib, util, dialog, mMetrics, Deferred) {
+	//default search renderer until we factor this out completely
+	function DefaultSearchRenderer(serviceRegistry, commandRegistry) {
+		this.serviceRegistry = serviceRegistry;
+		this.commandRegistry = commandRegistry;
+		this.openWithCommands = null;
+	}
+	/**
+	 * Create a renderer to display search results.
+	 * @public
+     * @param {DOMNode} resultsNode Node under which results will be added.
+	 * @param {String} [heading] the heading text, or null if none required
+	 * @param {Function(DOMNode)} [onResultReady] If any results were found, this is called on the resultsNode.
+	 * @param {Function(DOMNode)} [decorator] A function to be called that knows how to decorate each row in the result table
+	 *   This function is passed a <td> element.
+	 * @returns a render function.
+	 */
+	DefaultSearchRenderer.prototype.makeRenderFunction = function(contentTypeService, resultsNode, heading, onResultReady, decorator) {
+		var serviceRegistry = this.serviceRegistry, commandRegistry = this.commandRegistry;
+		this.openWithCommands = this.openWithCommands || extensionCommands.createOpenWithCommands(serviceRegistry, contentTypeService, commandRegistry);
+
+		/**
+		 * Displays links to resources under the given DOM node.
+		 * @param {Object[]} resources array of resources. The shape of a resource is {name, path, lineNumber, directory, isExternalResource}
+		 *	Both directory and isExternalResource cannot be true at the same time.
+		 * @param {String} [queryName] A human readable name to display when there are no matches.  If 
+		 *  not used, then there is nothing displayed for no matches
+		 * @param {String} [error] A human readable error to display.
+		 * @param {Object} [searchParams] Search params used
+		 */
+		var _self = this;
+		function render(resources, queryName, error, searchParams) {
+			return Deferred.when(_self.openWithCommands, function(openWithCommands) {
+				if (error) {
+					lib.empty(resultsNode);
+					var message = document.createElement("div"); //$NON-NLS-0$
+					message.appendChild(document.createTextNode(searchMSG["Search failed."]));
+					resultsNode.appendChild(message);
+					if (typeof(onResultReady) === "function") { //$NON-NLS-0$
+						onResultReady(resultsNode);
+					}
+					return;
+				} 
+			
+				//Helper function to append a path String to the end of a search result dom node 
+				var appendPath = (function() { 
+				
+					//Map to track the names we have already seen. If the name is a key in the map, it means
+					//we have seen it already. Optionally, the value associated to the key may be a function' 
+					//containing some deferred work we need to do if we see the same name again.
+					var namesSeenMap = {};
+					
+					function doAppend(domElement, resource) {
+						var path = resource.folderName ? resource.folderName : resource.path;
+						var pathNode = document.createElement('span'); //$NON-NLS-0$
+						pathNode.id = path.replace(/[^a-zA-Z0-9_\.:\-]/g,'');
+						pathNode.appendChild(document.createTextNode(' - ' + path + ' ')); //$NON-NLS-1$ //$NON-NLS-0$
+						domElement.appendChild(pathNode);
+					}
+					
+					function appendPath(domElement, resource) {
+						var name = resource.name;
+						if (namesSeenMap.hasOwnProperty(name)) {
+							//Seen the name before
+							doAppend(domElement, resource);
+							var deferred = namesSeenMap[name];
+							if (typeof(deferred)==='function') { //$NON-NLS-0$
+								//We have seen the name before, but prior element left some deferred processing
+								namesSeenMap[name] = null;
+								deferred();
+							}
+						} else {
+							//Not seen before, so, if we see it again in future we must append the path
+							namesSeenMap[name] = function() { doAppend(domElement, resource); };
+						}
+					}
+					return appendPath;
+				}()); //End of appendPath function
+	
+				var foundValidHit = false;
+				lib.empty(resultsNode);
+				if (resources && resources.length > 0) {
+					var table = document.createElement('table'); //$NON-NLS-0$
+					table.setAttribute('role', 'presentation'); //$NON-NLS-1$ //$NON-NLS-0$
+					for (var i=0; i < resources.length; i++) {
+						var resource = resources[i];
+						var col;
+						if (!foundValidHit) {
+							foundValidHit = true;
+							// Every caller is passing heading === false, consider removing this code.
+							if (heading) {
+								var headingRow = table.insertRow(0);
+								col = headingRow.insertCell(0);
+								col.textContent = heading;
+							}
+						}
+						var row = table.insertRow(-1);
+						col = row.insertCell(0);
+						col.colspan = 2;
+						if (decorator) {
+							decorator(col);
+						}
+	
+						// Transform into File object that navigatorRenderer can consume
+						var item = {
+							Name: resource.name,
+							Location: resource.location
+						};
+						var params = null;
+						if (typeof resource.LineNumber === "number") { //$NON-NLS-0$
+							params = {};
+							params.line = resource.LineNumber;
+						}
+						if (searchParams && searchParams.keyword && !searchParams.nameSearch) {
+							var searchHelper = mSearchUtils.generateSearchHelper(searchParams);
+							params = params || {};
+							params.find = searchHelper.inFileQuery.searchStr;
+							params.regEx = searchHelper.inFileQuery.wildCard ? true : undefined;
+						}
+						var resourceLink = navigatorRenderer.createLink(require.toUrl("edit/edit.html"), item, commandRegistry, contentTypeService,
+							openWithCommands, {
+								"aria-describedby": (resource.folderName ? resource.folderName : resource.path).replace(/[^a-zA-Z0-9_\.:\-]/g,''), //$NON-NLS-0$
+								style: {
+									verticalAlign: "middle" //$NON-NLS-0$
+								}
+							}, params);
+						resourceLink.resource = resource;
+						if (resource.LineNumber) { // FIXME LineNumber === 0 
+							resourceLink.appendChild(document.createTextNode(' (Line ' + resource.LineNumber + ')'));
+						}
+	
+						col.appendChild(resourceLink);
+						appendPath(col, resource);
+					}
+					resultsNode.appendChild(table);
+					if (typeof(onResultReady) === "function") { //$NON-NLS-0$
+						onResultReady(resultsNode);
+					}
+				}
+				if (!foundValidHit) {
+					// only display no matches found if we have a proper name
+					if (queryName) {
+						var errorStr = i18nUtil.formatMessage(searchMSG["NoMatchFound"], bidiUtils.enforceTextDirWithUcc(queryName)); 
+						lib.empty(resultsNode);
+						resultsNode.appendChild(document.createTextNode(errorStr)); 
+						if (typeof(onResultReady) === "function") { //$NON-NLS-0$
+							onResultReady(resultsNode);
+						}
+					}
+				} 
+			});
+		} // end render
+		return render;
+	};//end makeRenderFunction
+
 	/**
 	 * Usage: <code>new OpenResourceDialog(options).show();</code>
 	 * 
@@ -33,25 +202,27 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 		'<div role="search">' + //$NON-NLS-0$
 			'<div><label id="fileNameMessage" for="fileName">${Type the name of a file to open (? = any character, * = any string):}</label></div>' + //$NON-NLS-0$
 			'<div><input id="fileName" type="text" class="openResourceDialogInput" style="min-width: 25em; width:90%;"/></div>' + //$NON-NLS-0$
+			'<div><label for="searchScope"><input id="searchScope" type="checkbox" style="width: auto" class="openResourceDialogInput"/>${Search all Projects}</label></input></div>' + //$NON-NLS-0$
 			'<div id="progress" style="padding: 2px 0 0; width: 100%;"><img src="'+ require.toUrl("../../../images/progress_running.gif") + '" class="progressPane_running_dialog" id="crawlingProgress"></img></div>' +  //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 			'<div id="results" style="max-height:250px; height:auto; overflow-y:auto;" aria-live="off"></div>' + //$NON-NLS-0$
 			'<div id="statusbar"></div>' + //$NON-NLS-0$
 		'</div>'; //$NON-NLS-0$
 
 	OpenResourceDialog.prototype._init = function(options) {
-		this.title = options.title || messages['Find File Named'];
+		this.title = options.title || messages['FindFileNamed'];
 		this.modal = true;
 		this.messages = messages;
+		this.serviceRegistry = options.serviceRegistry;
+		this.commandRegistry = options.commandRegistry;
 		this._searcher = options.searcher;
 		this._progress = options.progress;
 		this._onHide = options.onHide;
-		this._contentTypeService = new mContentTypes.ContentTypeRegistry(this._searcher.registry);
+		this._contentTypeService = new mContentTypes.ContentTypeRegistry(this.serviceRegistry);
 		if (!this._searcher) {
 			throw new Error("Missing required argument: searcher"); //$NON-NLS-0$
 		}	
 		this._searchDelay = options.searchDelay || 500;
 		this._time = 0;
-		this._searcher.setCrawler(null);
 		this._forceUseCrawler = false;
 		this._initialText = options.initialText;
 		this._message = options.message;
@@ -59,26 +230,36 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 		if (options.nameSearch !== undefined) {
 			this._nameSearch = options.nameSearch;
 		}
-		this._searchOnRoot = true;
-		this._fileService = this._searcher.getFileService();
-		if (!this._fileService) {
+		this._searchOnRoot = false; // true;
+		this._fileClient = this._searcher.getFileService();
+		if (!this._fileClient) {
 			throw new Error(messages['Missing required argument: fileService']);
 		}
-		this._searchRenderer = options.searchRenderer;
-		if (!this._searchRenderer || typeof(this._searchRenderer.makeRenderFunction) !== "function") { //$NON-NLS-0$
-			throw new Error(messages['MissingSearchRenderer']);
-		}
+		this._searchRenderer = new DefaultSearchRenderer(this.serviceRegistry, this.commandRegistry);
 		this._initialize();
 	};
 	
 	OpenResourceDialog.prototype._bindToDom = function(parent) {
 		var self = this;
+		
+		var gs = this.getSearchPref();
+		this.$searchScope.checked = gs;
+		this.updateTitle();
+		this.$searchScope.addEventListener("click", function(e) {
+			mMetrics.logEvent("preferenceChange", "searchScope", null, this.$searchScope.checked ? 0 : 1); //$NON-NLS-1$ //$NON-NLS-2$
+			localStorage.setItem("/searchScope", this.$searchScope.checked); //$NON-NLS-1$
+			
+			this.updateTitle();
+			this.doSearch();
+		}.bind(this));
+		
 		self.$crawlingProgress.style.display = "none"; //$NON-NLS-0$
 		if(this._nameSearch) {
 			this.$fileName.setAttribute("placeholder", messages["FileName FolderName"]);  //$NON-NLS-0$
 		} else {
 			this.$fileName.setAttribute("placeholder", messages["Search"]);  //$NON-NLS-0$
 		}
+		bidiUtils.initInputField(this.$fileName);
 		this.$fileName.addEventListener("input", function(evt) { //$NON-NLS-0$
 			self._time = + new Date();
 			if (self._timeoutId) {
@@ -97,6 +278,7 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 						window.location.href = link.href;
 						self.hide();
 					}
+					self._saveOpenedFileName(link.resource);
 				}
 			}
 		}, false);
@@ -157,11 +339,10 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 			e.target.focus();
 		}, false);
 		setTimeout(function() {
-			if(self._forceUseCrawler || !self._fileService.getService(self._searcher.getSearchLocation())["search"]){//$NON-NLS-0$
+			if(self._forceUseCrawler || !self._fileClient.getService(self._searcher.getSearchLocation())["search"]){//$NON-NLS-0$
 				var searchLoc = self._searchOnRoot ? self._searcher.getSearchRootLocation() : self._searcher.getChildrenLocation();
-				var crawler = new mSearchCrawler.SearchCrawler(self._searcher.registry, self._fileService, "", {searchOnName: true, location: searchLoc}); 
-				self._searcher.setCrawler(crawler);
-				crawler.buildSkeleton(function() {
+				self._crawler = self._searcher._createCrawler({resource: searchLoc}, {searchOnName: true}); 
+				self._crawler.buildSkeleton(function() {
 					self.$crawlingProgress.style.display = "inline"; //$NON-NLS-0$
 					self.$progress.appendChild(document.createTextNode(messages['Building file skeleton...']));
 					}, function(){
@@ -181,15 +362,54 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 	};
 
 	/** @private */
+	OpenResourceDialog.prototype.updateTitle = function() {
+		var isGlobalSearch = this.$searchScope.checked;
+
+		var newTitle, scope;
+		if (!isGlobalSearch) {
+			scope = "\'" + this._searcher.getSearchLocationName() + "\'"; //$NON-NLS-1$ //$NON-NLS-2$
+			newTitle = util.formatMessage(this.title, bidiUtils.enforceTextDirWithUcc(scope));
+		} else {
+			scope = messages["FileFileGlobal"];
+			newTitle = messages["FindFileGlobal"];
+		}
+		
+		var titleDiv = lib.$("span", this.$frame); //$NON-NLS-1$
+		titleDiv.textContent = newTitle;
+		
+		// Hide the checkbox if this search must be global
+		if (this.forcedGlobalSearch()) {
+			this.$searchScope.parentNode.style.display = "none"; //$NON-NLS-1$
+		}
+		this._showRecentSearchedOpenedFiles();
+	};
+
+	/** @private */
 	OpenResourceDialog.prototype.checkSearch = function() {
 		clearTimeout(this._timeoutId);
-		var now = new Date().getTime();
+		var now = Date.now();
 		if ((now - this._time) > this._searchDelay) {
 			this._time = now;
 			this.doSearch();
 		} else {
 			this._timeoutId = setTimeout(this.checkSearch.bind(this), 50); //$NON-NLS-0$
 		}
+	};
+
+	/** @private */
+	OpenResourceDialog.prototype.forcedGlobalSearch = function() {
+		var loc = this._searcher.getSearchLocation();
+		var rootLoc = this._searcher.getSearchRootLocation();
+		return loc === rootLoc;
+	};
+
+	/** @private */
+	OpenResourceDialog.prototype.getSearchPref = function() {
+		if (this.forcedGlobalSearch())
+			return true;
+			
+		var globalSearch = localStorage.getItem("/searchScope") === 'true'; //$NON-NLS-0$
+		return globalSearch;
 	};
 
 	/** @private */
@@ -220,6 +440,10 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 		if (text) {
 			// Gives Webkit a chance to show the "Searching" message
 			var keyword = this._detectFolderKeyword(text);
+			
+			// Capture the checkbox state
+			this._searchOnRoot = this.$searchScope.checked;
+			
 			var searchParams = this._searcher.createSearchParams(keyword.keyword, this._nameSearch, this._searchOnRoot);
 			var renderFunction = this._searchRenderer.makeRenderFunction(this._contentTypeService, this.$results, false, this.decorateResult.bind(this));
 			this.currentSearch = renderFunction;
@@ -234,16 +458,23 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 			} else {
 				deferredSearch = new Deferred().resolve();
 			}
-			deferredSearch.then(function(result) {
+			deferredSearch.then(function(/*result*/) {
 				this._searchPending = true;
-				this._searcher.search(searchParams, keyword.folderKeyword, function() {
+				this._searcher.search(searchParams).then(function(searchResult) {
 					this._searchPending = false;
 					if (renderFunction === this.currentSearch || this.cancelled) {
 						this.cancelled = false;
-						renderFunction.apply(null, arguments);
+						var filteredResult = searchResult.filter(function(item) {
+							return (keyword.folderKeyword ? (item.path.indexOf(keyword.folderKeyword) >= 0) : true);
+						});
+						renderFunction(filteredResult, searchParams.keyword, null, searchParams);
 					}
+				}.bind(this), function(error) {
+					renderFunction(null, null, error, null);
 				}.bind(this));
 			}.bind(this));
+		}else{
+			this._showRecentSearchedOpenedFiles();
 		}
 	};
 	
@@ -255,10 +486,46 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 			if (evt.button === 0 && !evt.ctrlKey && !evt.metaKey) {
 				self.hide();
 			}
+			self._saveOpenedFileName(evt.srcElement.resource);
 		}
 		for (var i=0; i<links.length; i++) {
 			var link = links[i];
 			link.addEventListener("click", clicked, false);
+		}
+	};
+	/** @private */
+	OpenResourceDialog.prototype._saveOpenedFileName = function(resource) {
+		var exsitingSearchedOpenedFileList = JSON.parse(sessionStorage.getItem("lastSearchedOpendFiles")) || [];
+		var MAX_LENGTH = 10;
+		if(exsitingSearchedOpenedFileList.length > 0){
+			var oldIndex = indexofFileLink(exsitingSearchedOpenedFileList, resource);
+			if(oldIndex !== -1){
+				exsitingSearchedOpenedFileList.splice(oldIndex, 1);
+			}
+		}
+		if(exsitingSearchedOpenedFileList.length < MAX_LENGTH){
+			exsitingSearchedOpenedFileList.unshift(resource);
+		}else if(exsitingSearchedOpenedFileList.length === MAX_LENGTH){
+			exsitingSearchedOpenedFileList.pop();
+			exsitingSearchedOpenedFileList.unshift(resource);
+		}
+		sessionStorage.setItem("lastSearchedOpendFiles", JSON.stringify(exsitingSearchedOpenedFileList)); //$NON-NLS-1$
+		function indexofFileLink(array,link){
+			for( var k=0; k < array.length ; k++){
+				if(array[k].location === link.location){
+					return k;
+				}
+			}
+			return -1;
+		}
+	};
+	
+	/** @private */
+	OpenResourceDialog.prototype._showRecentSearchedOpenedFiles = function() {
+		var exsitingSearchedOpenedFileList = JSON.parse(sessionStorage.getItem("lastSearchedOpendFiles"));
+		if(exsitingSearchedOpenedFileList && exsitingSearchedOpenedFileList.length > 0 ){
+			var renderFunction = this._searchRenderer.makeRenderFunction(this._contentTypeService, this.$results, messages["Recently Opened Files"], this.decorateResult.bind(this));
+			renderFunction(exsitingSearchedOpenedFileList, null, null, null);
 		}
 	};
 	
@@ -269,6 +536,7 @@ define(['i18n!orion/widgets/nls/messages', 'orion/crawler/searchCrawler', 'orion
 	
 	OpenResourceDialog.prototype._afterHiding = function() {
 		if (this._onHide) {
+			this._searcher.setLocationbyURL(this._searcher.getSearchLocation());
 			this._onHide();
 		}
 	};

@@ -8,41 +8,52 @@
 		<title>Settings</title>
 		<link rel="stylesheet" type="text/css" href="settings.css"/>
 		<script src="../requirejs/require.js"></script>
-		<script type="text/javascript">
+		<script>
 			/*eslint-env browser, amd*/
-			require({ baseUrl: '..',
-				      packages: [],
-				      paths: {
-				          text: 'requirejs/text',
-				          i18n: 'requirejs/i18n',
-				          domReady: 'requirejs/domReady',
-				          csslint: 'csslint/csslint',
-				      } 
+			require(["../orion/require-config.js"], function(config){
+				function load() {
+					require(["settings/settings"], null, config.errback);
+				}
+				if (sessionStorage.settingsSplashShown) {
+					load();
+				} else {
+					sessionStorage.settingsSplashShown = true;
+					require.config({config: {"orion/splash": {splashID: "Settings"}}});
+					require(["orion/splash"], load, load);
+				}
 			});
-			require(["settings/settings"]);
 		</script>
 	</head>
 	
 	<body id="orion-settings" class="orionPage">
-		<div id="sideMenu" class="sideMenu"></div>
+		<nav id="sideMenu" class="sideMenu"></nav>
 		<div id="pageContent" class="content-fixedHeight">
 			<div id="sideMenuToggle" class="sideMenuToggle"></div>
-			<div id="auxpane" class="auxpane sidePanelLayout hasSplit">
-				<div class="fixedToolbarHolder">
-					<div id="sidebarToolbar" class="sidebarToolbar mainToolbar toolComposite toolbarLayout"></div>
-					<div id="categoriesTitle" class="categoriesTitle"></div>
-					<div id="categoriesContainer" class="toolbarTarget categoriesContainer"></div>
+			<div id="pageToolbar" class="mainToolbar toolComposite toolbarLayout"></div>
+			<div id="innerPanels" class="innerPanels">
+				<div id="auxpane" class="auxpane sidePanelLayout hasSplit">
+					<div class="fixedToolbarHolder">
+						<div id="sidebarToolbar" class="sidebarToolbar mainToolbar toolComposite toolbarLayout"></div>
+						<div id="categoriesTitle" class="categoriesTitle"></div>
+						<div id="categoriesContainer" class="toolbarTarget categoriesContainer toolbarTarget-toolbarHidden"></div>
+					</div>
 				</div>
-			</div>
-			<div class="split splitLayout settingsSplitLayout" style="left: 300px;"></div>
-			<div id="rightPane" class="mainpane mainPanelLayout hasSplit">
-				<div class="fixedToolbarHolder">
-					<div class="mainToolbar toolComposite" id="pageToolbar"></div>
-					<div class="toolbarTarget workingTarget" tabindex="0" id="settings">
-					</div>				
+				<div class="split splitLayout settingsSplitLayout" style="left: 300px;"></div>
+				<div id="rightPane" class="mainpane mainPanelLayout hasSplit">
+					<div class="fixedToolbarHolder">
+						<div class="toolbarTarget workingTarget toolbarTarget-toolbarHidden" tabindex="0" id="settings">
+						</div>				
+				</div>
 			</div>
 		</div>
 		<div class="footer-fixed-bottom footer" id="footer"></div>
 		</div>
+		<script>
+			if (!sessionStorage.settingsSplashShown) {
+				var splash = document.createElement("div");
+				splash.id = splash.className = "splash";
+				document.body.appendChild(splash);
+			}
+		</script>
 	</body>
 </html>

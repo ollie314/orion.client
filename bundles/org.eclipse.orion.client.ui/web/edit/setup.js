@@ -17,7 +17,7 @@ define([
 	'orion/inputManager',
 	'orion/commands',
 	'orion/globalCommands',
-	'orion/editor/textModel',
+	'orion/editor/textModelFactory',
 	'orion/editor/undoStack',
 	'orion/folderView',
 	'orion/editorView',
@@ -42,24 +42,31 @@ define([
 	'orion/URITemplate',
 	'orion/i18nUtil',
 	'orion/PageUtil',
+	'orion/util',
 	'orion/objects',
 	'orion/webui/littlelib',
 	'orion/Deferred',
 	'orion/projectClient',
 	'orion/webui/splitter',
-	'orion/webui/SplitMenu',
-	'orion/webui/tooltip'
+	'orion/webui/tooltip',
+	'orion/bidiUtils',
+	'orion/customGlobalCommands'
 ], function(
 	messages, Sidebar, mInputManager, mCommands, mGlobalCommands,
-	mTextModel, mUndoStack,
+	mTextModelFactory, mUndoStack,
 	mFolderView, mEditorView, mPluginEditorView , mMarkdownView, mMarkdownEditor,
 	mCommandRegistry, mContentTypes, mFileClient, mFileCommands, mEditorCommands, mSelection, mStatus, mProgress, mOperationsClient, mOutliner, mDialogs, mExtensionCommands, ProjectCommands, mSearchClient,
-	EventTarget, URITemplate, i18nUtil, PageUtil, objects, lib, Deferred, mProjectClient, mSplitter, mSplitMenu, mTooltip
+	EventTarget, URITemplate, i18nUtil, PageUtil, util, objects, lib, Deferred, mProjectClient, mSplitter, mTooltip, bidiUtils, mCustomGlobalCommands
 ) {
 
 var exports = {};
 
-var enableSplitEditor = false;
+var enableSplitEditor = true;
+
+var MODE_SINGLE = 0;
+var MODE_VERTICAL = 1;
+var MODE_HORIZONTAL = 2;
+var MODE_PIP = 3;
 
 var uriTemplate = new URITemplate("#{,resource,params*}"); //$NON-NLS-0$
 
@@ -106,8 +113,8 @@ objects.mixin(MenuBar.prototype, {
 		
 		commandRegistry.addCommandGroup(fileActionsScope, "orion.menuBarFileGroup", 1000, messages["File"], null, messages["noActions"], null, null, "dropdownSelection"); //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 		commandRegistry.addCommandGroup(editActionsScope, "orion.menuBarEditGroup", 100, messages["Edit"], null, messages["noActions"], null, null, "dropdownSelection"); //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-		commandRegistry.addCommandGroup(viewActionsScope, "orion.menuBarViewGroup", 100, messages["View"], null, messages["noActions"], null, null, "dropdownSelection"); //$NON-NLS-1$ //$NON-NLS-0$	
-		commandRegistry.addCommandGroup(toolsActionsScope, "orion.menuBarToolsGroup", 100, messages["Tools"], null, null, null, null, "dropdownSelection"); //$NON-NLS-1$ //$NON-NLS-0$
+		commandRegistry.addCommandGroup(viewActionsScope, "orion.menuBarViewGroup", 100, messages["View"], null, messages["noActions"], null, null, "dropdownSelection"); //$NON-NLS-1$ //$NON-NLS-2$	
+		commandRegistry.addCommandGroup(toolsActionsScope, "orion.menuBarToolsGroup", 100, messages["Tools"], null, null, null, null, "dropdownSelection"); //$NON-NLS-1$ //$NON-NLS-2$
 		
 		commandRegistry.addCommandGroup(fileActionsScope, "orion.newContentGroup", 0, messages["New"], "orion.menuBarFileGroup", null, null, null, "dropdownSelection"); //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 		commandRegistry.addCommandGroup(fileActionsScope, "orion.importGroup", 100, messages["Import"], "orion.menuBarFileGroup", null, null, null, "dropdownSelection"); //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
@@ -120,6 +127,7 @@ objects.mixin(MenuBar.prototype, {
 		var editorCommands = this.editorCommands;
 		return editorCommands.createCommands().then(function() {
 			editorCommands.registerCommands();
+			editorCommands.registerContextMenuCommands();
 			return mFileCommands.createFileCommands(serviceRegistry, commandRegistry, fileClient).then(function() {
 				return mExtensionCommands.createFileCommands(serviceRegistry, null, "all", true, commandRegistry).then(function() { //$NON-NLS-0$
 					var projectClient = serviceRegistry.getService("orion.project.client"); //$NON-NLS-0$
@@ -174,7 +182,7 @@ function TextModelPool(options) {
 TextModelPool.prototype = {};
 objects.mixin(TextModelPool.prototype, {
 	create: function(serviceID) {
-		var model = new mTextModel.TextModel();
+		var model = new mTextModelFactory.TextModelFactory().createTextModel({serviceRegistry: this.serviceRegistry});
 		var undoStack = new mUndoStack.UndoStack(model, 500);
 		var contextImpl = {};
 		[	
@@ -241,7 +249,7 @@ function EditorViewer(options) {
 	this.fileNodeTooltip = new mTooltip.Tooltip({
 		node: this.curFileNode,
 //		text: "Test Tooltip",
-		position: ["below", "above", "right", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+		position: ["below", "above", "right", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-4$
 	});
 
 	// Create search and filefields
@@ -342,7 +350,11 @@ objects.mixin(EditorViewer.prototype, {
 		});
 		inputManager.addEventListener("InputChanged", function(evt) { //$NON-NLS-0$
 			var metadata = evt.metadata;
-			sessionStorage.lastFile = metadata ? PageUtil.hash() : null;
+			if (metadata) {
+				sessionStorage.lastFile = PageUtil.hash();
+			} else {
+				delete sessionStorage.lastFile;
+			}
 			var view = this.getEditorView(evt.input, metadata);
 			this.setEditor(view ? view.editor : null);
 			evt.editor = this.editor;
@@ -351,7 +363,11 @@ objects.mixin(EditorViewer.prototype, {
 			this.activateContext.setActiveEditorViewer(this);
 			this.commandRegistry.processURL(href);
 			if (this.curFileNode) {
-				this.curFileNode.innerHTML = evt.name;
+				var curFileNodeName = evt.name || "";
+				if (bidiUtils.isBidiEnabled()) {
+					curFileNodeName = bidiUtils.enforceTextDirWithUcc(curFileNodeName);
+				}
+				this.curFileNode.textContent = curFileNodeName;				
 			}
 		}.bind(this));
 		inputManager.addEventListener("InputChanging", function(e) { //$NON-NLS-0$
@@ -381,13 +397,17 @@ objects.mixin(EditorViewer.prototype, {
 				}
 			}
 		}.bind(this));
-		this.selection.addEventListener("selectionChanged", function(event) { //$NON-NLS-0$
-			inputManager.setInput(event.selection);
+		this.selection.addEventListener("selectionChanged", function(evt) { //$NON-NLS-0$
+			inputManager.setInput(evt.selection);
 		});
 	},
 
 	defaultOptions: function() {
+		//Don't forward the complete activate context, only specify the things we want to see
+		var context = Object.create(null);
+		context.openEditor = this.activateContext.openEditor.bind(this.activateContext);
 		return {
+			activateContext: context,
 			parent: this.contentNode,
 			model: this.pool.model,
 			undoStack: this.pool.undoStack,
@@ -438,7 +458,7 @@ objects.mixin(EditorViewer.prototype, {
 		if (metadata && input) {
 			var options = objects.mixin({
 				input: input,
-				metadata: metadata,
+				metadata: metadata
 			}, this.defaultOptions());
 			//TODO better way of registering built-in editors
 			if (metadata.Directory) {
@@ -494,13 +514,24 @@ objects.mixin(EditorViewer.prototype, {
 		if (this.editor) {
 			this.editor.addEventListener("DirtyChanged", this.editorDirtyListener = function() { //$NON-NLS-0$
 				mGlobalCommands.setDirtyIndicator(this.editor.isDirty());
+				
+				// Update the viewer's header
+				if (this.curFileNode) {
+					if (!this.dirtyIndicator) {
+						this.dirtyIndicator = document.createElement("span");
+						this.dirtyIndicator.classList.add("editorViewerHeaderDirtyIndicator");
+						this.dirtyIndicator.textContent = "*";
+						this.curFileNode.parentNode.insertBefore(this.dirtyIndicator, this.curFileNode);
+					}
+					this.dirtyIndicator.style.display = this.editor.isDirty() ? "block" : "none";
+				}
 			}.bind(this));
 		}
 	},
 	
 	setInput: function(hash) {
 		this.inputManager.setInput(hash);
-	},
+	}
 });
 
 function EditorSetup(serviceRegistry, pluginRegistry, preferences, readonly) {
@@ -513,7 +544,7 @@ function EditorSetup(serviceRegistry, pluginRegistry, preferences, readonly) {
 	this.modelPool = new TextModelPool({serviceRegistry: this.serviceRegistry});
 
 	this.editorDomNode = lib.node("editor"); //$NON-NLS-0$
-	this.sidebarDomNode = lib.node("sidebar"); //$NON-NLS-0$
+	this.sidebarDomNode = lib.node("pageSidebar"); //$NON-NLS-0$
 	this.sidebarToolbar = lib.node("sidebarToolbar"); //$NON-NLS-0$
 	this.pageToolbar = lib.node("pageToolbar"); //$NON-NLS-0$
 
@@ -526,7 +557,7 @@ objects.mixin(EditorSetup.prototype, {
 		var serviceRegistry = this.serviceRegistry;
 		this.selection = new mSelection.Selection(serviceRegistry);
 		this.operationsClient = new mOperationsClient.OperationsClient(serviceRegistry);
-		this.statusService = new mStatus.StatusReportingService(serviceRegistry, this.operationsClient, "statusPane", "notifications", "notificationArea"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+		this.statusService = new mStatus.StatusReportingService(serviceRegistry, this.operationsClient, "statusPane", "notifications", "notificationArea"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$ //$NON-NLS-3$
 		this.dialogService = new mDialogs.DialogService(serviceRegistry);
 		this.commandRegistry = new mCommandRegistry.CommandRegistry({selection: this.selection});
 		this.progressService = new mProgress.ProgressService(serviceRegistry, this.operationsClient, this.commandRegistry);
@@ -541,12 +572,15 @@ objects.mixin(EditorSetup.prototype, {
 			serviceRegistry: serviceRegistry,
 			commandRegistry: this.commandRegistry,
 			fileClient: this.fileClient,
+			preferences: this.preferences,
+			renderToolbars: this.renderToolbars.bind(this),
 			searcher: this.searcher,
 			readonly: this.readonly,
 			toolbarId: "toolsActions", //$NON-NLS-0$
 			saveToolbarId: "fileActions", //$NON-NLS-0$
 			editToolbarId: "editActions", //$NON-NLS-0$
 			navToolbarId: "pageNavigationActions", //$NON-NLS-0$
+			editorContextMenuId: "editorContextMenuActions", //$NON-NLS-0$
 		});
 	},
 	
@@ -567,8 +601,33 @@ objects.mixin(EditorSetup.prototype, {
 		return menuBar.createCommands();
 	},
 	
+	createRunBar: function () {
+		var menuBar = this.menuBar;
+		var runBarParent = menuBar.runBarNode;
+		return mCustomGlobalCommands.createRunBar({
+			parentNode: runBarParent,
+			serviceRegistry: this.serviceRegistry,
+			commandRegistry: this.commandRegistry,
+			fileClient: this.fileClient,
+			projectCommands: ProjectCommands,
+			projectClient: this.serviceRegistry.getService("orion.project.client"),
+			progressService: this.progressService,
+			preferences: this.preferences,
+			editorInputManager: this.editorInputManager
+		}).then(function(runBar){
+			if (runBar) {
+				this.preferences.get('/runBar').then(function(prefs){ //$NON-NLS-1$
+					this.runBar = runBar;
+					var displayRunBar = prefs.display === undefined  || prefs.display;
+					if (util.isElectron || !displayRunBar) {
+						lib.node("runBarWrapper").style.display = "none";
+					}
+				});
+			}
+		}.bind(this));
+	},
+	
 	createSideBar: function() {
-		var commandRegistry = this.commandRegistry;
 		// Create input manager wrapper to handle multiple editors
 		function EditorInputManager() {
 			EventTarget.attach(this);
@@ -612,11 +671,13 @@ objects.mixin(EditorSetup.prototype, {
 			outlineService: this.outlineService,
 			parent: this.sidebarDomNode,
 			progressService: this.progressService,
+			searcher: this.searcher,
 			selection: this.selection,
 			serviceRegistry: this.serviceRegistry,
 			sidebarNavInputManager: this.sidebarNavInputManager,
 			switcherScope: "viewActions", //$NON-NLS-0$
 			editScope: "editActions", //$NON-NLS-0$
+			toolsScope: "toolsActions", //$NON-NLS-0$
 			menuBar: this.menuBar,
 			toolbar: this.sidebarToolbar
 		});
@@ -627,29 +688,102 @@ objects.mixin(EditorSetup.prototype, {
 			}
 		};
 		sidebar.create();
+		this.editorCommands.setSideBar(sidebar);
 		this.sidebarNavInputManager.addEventListener("rootChanged", function(evt) { //$NON-NLS-0$
 			this.lastRoot = evt.root;
 		}.bind(this));
-		var gotoInput = function(evt) { //$NON-NLS-0$
-			var newInput = evt.newInput || evt.parent || ""; //$NON-NLS-0$
-			window.location = uriTemplate.expand({resource: newInput}); //$NON-NLS-0$
+		var gotoInput = function(evt) {
+			var newInput = evt.newInput || evt.parent || "";
+			window.location = uriTemplate.expand({resource: newInput.resource || newInput, params: newInput.params || []});
 		};
 		this.sidebarNavInputManager.addEventListener("filesystemChanged", gotoInput); //$NON-NLS-0$
 		this.sidebarNavInputManager.addEventListener("editorInputMoved", gotoInput); //$NON-NLS-0$
 		this.sidebarNavInputManager.addEventListener("create", function(evt) { //$NON-NLS-0$
 			if (evt.newValue && !evt.ignoreRedirect) {
-				var item = evt.newValue;
-				var openWithCommand = mExtensionCommands.getOpenWithCommand(commandRegistry, evt.newValue);
-				if (openWithCommand) {
-					var href = openWithCommand.hrefCallback({items: item});
-				} else {
-					href = uriTemplate.expand({resource: evt.newValue.Location});
-				}
-				window.location = href;
+				window.location = this.computeNavigationHref(evt.newValue);
 			}
-		});
+		}.bind(this));
 	},
 
+	/**
+	 * @description Creates a URL ref from the give location and options to be opened by the browser
+	 * @function
+	 * @param {Object} item The file metadata object which has at least a <code>Location</code> property
+	 * @param {Object} options The map of options
+	 * @returns {String} The computed URL to navigate to
+	 * @since 9.0
+	 */
+	computeNavigationHref: function(item, options) {
+		var openWithCommand = mExtensionCommands.getOpenWithCommand(this.commandRegistry, item);
+		if (openWithCommand && typeof openWithCommand.hrefCallback === 'function') {
+			return openWithCommand.hrefCallback({items: objects.mixin({}, item, {params: options})});
+		}
+		if(options) {
+			return uriTemplate.expand({resource: item.Location, params: options});
+		}
+		return uriTemplate.expand({resource: item.Location});
+	},
+
+	/**
+	 * @description Opens the given location
+	 * @function
+	 * @param {String} fileurl The URL to open
+	 * @param {Object} options The map of options. 
+	 * 
+	 * Current set of understood options include:
+	 *   start - (number) The start range to select when opening an editor
+	 *   end - (number) The end range to select when opening an editor
+	 *   mode - (string) Determines where the new file should open:
+	 * 			'replace': replaces the current editor's content
+	 * 			    'tab': opens the file in a new tab
+	 * 			  'split': Splits the editor (if needed) and shows the new content in the non-active editor
+	 * splitHint - (string) If the mode is 'split' and the editor has not yet been split this determines the
+	 *             initial splitter mode. Can be one of 'horizontal', 'vertical' or 'picInPic'.
+	 * 
+	 * @since 9.0
+	 */
+	openEditor: function(loc, options) {
+		var href = this.computeNavigationHref({Location: loc}, {start: options.start, end: options.end});
+		if (!href)
+			return;
+			
+		var mode = typeof(options.mode) === 'string' ? options.mode : 'replace'; //$NON-NLS-1$
+		switch (mode) {
+			case 'replace':
+				var editorView = this.activeEditorViewer.getCurrentEditorView();
+				if (editorView && editorView.editor) {
+					var sel = editorView.editor.getSelection();
+					var currentHref = this.computeNavigationHref({Location: this.activeEditorViewer.inputManager.getInput()}, {start: sel.start, end: sel.end});
+					history.pushState({}, "", currentHref);
+					this.lastHash = PageUtil.hash(); // Pushing to the history stack changes the hash
+				}
+				var hash = href.split('#')[1];
+				if (hash === window.location.hash.substring(1)) {
+					this.activeEditorViewer.inputManager.setInput(hash);
+				} else {
+					window.location = href;
+				}
+				break;
+			case 'tab':
+				window.open(href);
+				break;
+			case 'split':
+				var locWithParams = href.split('#')[1];
+				if (!this.splitterMode || this.splitterMode === MODE_SINGLE) {
+					var splitHint = typeof(options.splitHint) === 'string' ? options.splitHint : 'vertical'; //$NON-NLS-1$
+					if (splitHint === 'horizontal') 
+						this.setSplitterMode(MODE_HORIZONTAL, locWithParams);
+					else if (splitHint === 'vertical') 
+						this.setSplitterMode(MODE_VERTICAL, locWithParams);
+					else if (splitHint === 'picInPic') 
+						this.setSplitterMode(MODE_PIP, locWithParams);
+				} else {
+					this.editorViewers[1].inputManager.setInput(locWithParams);
+				}				
+				break;
+		}
+	},
+	
 	createEditorViewer: function(id) {
 		var editorViewer = new EditorViewer({
 			id: id,
@@ -679,7 +813,7 @@ objects.mixin(EditorSetup.prototype, {
 		//TODO create as many splitters as necessary given the number of editors viewers.
 		// Note that depending on the number of viewers it may be necessary to create intermediate parents
 		if (this.editorSplitter) return;
-		if (mode === this.splitMenu.MODE_SINGLE) return;
+		if (mode === MODE_SINGLE) return;
 		
 		var splitterDiv = document.createElement("div"); //$NON-NLS-0$
 		splitterDiv.id = "editorSplitter"; //$NON-NLS-0$
@@ -709,7 +843,7 @@ objects.mixin(EditorSetup.prototype, {
 		this.activeEditorViewer.setInput(hash);
 		this.sidebarNavInputManager.processHash(hash);
 	},
-
+	
 	load: function() {
 		var lastEditedFile = sessionStorage.lastFile;
 		var currentHash = PageUtil.hash();
@@ -722,7 +856,6 @@ objects.mixin(EditorSetup.prototype, {
 		window.addEventListener("hashchange", function() { //$NON-NLS-0$
 			this.setInput(PageUtil.hash());
 		}.bind(this));
-
 		window.onbeforeunload = function() {
 			var dirty, autoSave;
 			this.editorViewers.forEach(function(viewer) {
@@ -735,16 +868,28 @@ objects.mixin(EditorSetup.prototype, {
 					}
 				}
 			});
-			return dirty ? (autoSave ? messages.unsavedAutoSaveChanges : messages.unsavedChanges) : undefined;
+			var unsavedMessage = dirty ? (autoSave ? messages.unsavedAutoSaveChanges : messages.unsavedChanges) : undefined;
+			if(util.isElectron && dirty){
+				window.__electron.remote.dialog.showMessageBox(
+					window.__electron.remote.getCurrentWindow(),
+					{
+						type: 'warning',
+						buttons: [messages["OK"]],
+						title: messages["Orion"],
+						message: unsavedMessage
+					});
+			}
+			return unsavedMessage;
 		}.bind(this);
 	},
 
 	renderToolbars: function(metadata) {
+		metadata = metadata || this.activeEditorViewer.inputManager.getFileMetadata();
 		var menuBar = this.menuBar;
 		var commandRegistry = this.commandRegistry;
 		var editor = this.activeEditorViewer.editor;
 		menuBar.updateCommands();
-		["pageActions", "pageNavigationActions", "settingsActions"].forEach(function(id) { //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+		["pageActions", "pageNavigationActions", "settingsActions"].forEach(function(id) { //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$ //$NON-NLS-3$
 			var toolbar = lib.node(id);
 			if (toolbar) {
 				commandRegistry.destroy(toolbar);
@@ -780,7 +925,7 @@ objects.mixin(EditorSetup.prototype, {
 		if (!target) { //evt.input === null || evt.input === undefined) {
 			targetName = this.lastRoot ? this.lastRoot.Name : "";
 			target = this.lastRoot;
-		} else if (target && !target.Parents) {//If the target is file system root then we use the file service name
+		} else if (!util.isElectron && target && !target.Parents) {//If the target is file system root then we use the file service name
 			targetName = this.fileClient.fileServiceName(target.Location);
 		} else {
 			targetName = target.Name;
@@ -797,6 +942,9 @@ objects.mixin(EditorSetup.prototype, {
 				if (metadata && metadata.parent) {
 					return metadata.parent;
 				} else if (metadata && metadata.Parents && metadata.Parents.length > 0) {
+					if (metadata.Parents[0].Children) {
+						return metadata.Parents[0];
+					}
 					// The mini-nav in sidebar wants to do the same work, can we share it?
 					return this.progressService.progress(this.fileClient.read(metadata.Parents[0].Location, true), i18nUtil.formatMessage(messages.ReadingMetadata, metadata.Parents[0].Location));
 				}
@@ -835,17 +983,17 @@ objects.mixin(EditorSetup.prototype, {
 				contentType: this.editorInputManager.getContentType(),
 				metadata: metadata,
 				editor: editor,
-				location: window.location,
+				location: window.location
 			});
 		}
 	},
 
-	setSplitterMode: function(mode) {
+	setSplitterMode: function(mode, href) {
 		var oldSplitterMode = this.splitterMode;
 		if (this.splitterMode === mode) return;
 		this.splitterMode = mode;
 		
-		if (mode !== this.splitMenu.MODE_SINGLE && this.editorViewers.length < 2) {
+		if (mode !== MODE_SINGLE && this.editorViewers.length < 2) {
 			this.editorViewers.push(this.createEditorViewer(this.editorViewers.length + "")); //$NON-NLS-0$
 		}
 		this.createSplitters(mode);
@@ -860,7 +1008,7 @@ objects.mixin(EditorSetup.prototype, {
 			splitEditorViewerNode.classList.remove("editorViewerPicInPic"); //$NON-NLS-0$
 			splitEditorViewerNode.style.display = "block"; //$NON-NLS-0$
 			splitEditorViewerNode.style.width = splitEditorViewerNode.style.height = "100%"; //$NON-NLS-0$
-			["top", "left", "right", "bottom", "width", "height"].forEach(function(p) { //$NON-NLS-5$ //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+			["top", "left", "right", "bottom", "width", "height"].forEach(function(p) { //$NON-NLS-5$ //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-6$
 				splitEditorViewerNode.style[p] = ""; //$NON-NLS-0$
 			});
 			splitterNode.style.display = "block"; //$NON-NLS-0$
@@ -868,12 +1016,12 @@ objects.mixin(EditorSetup.prototype, {
 		
 		switch(mode){
 			
-			case this.splitMenu.MODE_PIP:
+			case MODE_PIP:
 				splitterNode.style.display = "none"; //$NON-NLS-0$
 				splitEditorViewerNode.classList.add("editorViewerPicInPic"); //$NON-NLS-0$
 				break;
 				
-			case this.splitMenu.MODE_SINGLE:
+			case MODE_SINGLE:
 				if (splitterNode) {
 					splitterNode.style.display = "none"; //$NON-NLS-0$
 				}
@@ -883,11 +1031,11 @@ objects.mixin(EditorSetup.prototype, {
 				this.setActiveEditorViewer(this.editorViewers[0]);
 				break;
 				
-			case this.splitMenu.MODE_HORIZONTAL:
+			case MODE_HORIZONTAL:
 				this.editorSplitter.setOrientation(mSplitter.ORIENTATION_VERTICAL, true);
 				break;
 			
-			case this.splitMenu.MODE_VERTICAL:
+			case MODE_VERTICAL:
 				this.editorSplitter.setOrientation(mSplitter.ORIENTATION_HORIZONTAL, true);
 				break;
 		}
@@ -896,56 +1044,81 @@ objects.mixin(EditorSetup.prototype, {
 			viewer.editorView.editor.resize();
 		});
 		
-		if (oldSplitterMode === this.splitMenu.MODE_SINGLE && mode !== this.splitMenu.MODE_SINGLE) {
+		if (oldSplitterMode === MODE_SINGLE && mode !== MODE_SINGLE) {
 			this.lastTarget = null;
-			this.editorViewers[1].inputManager.setInput(PageUtil.hash());
+			if (href) {
+				this.editorViewers[1].inputManager.setInput(href);
+			} else {
+				this.editorViewers[1].inputManager.setInput(PageUtil.hash());
+			}
 		}
 	},
-	_createSplitCommand: function(label){
-		var id = "orion.edit.showPip" + label; //$NON-NLS-0$
-		var splitCommand = new mCommands.Command({
-			name: label,
-			tooltip: label,
-			id: id, //$NON-NLS-0$
+	createSplitMenu: function() {
+		var that = this;
+		var currentChoice;
+		var toolbar = "settingsActions"; //$NON-NLS-1$
+		var changeSplitModeCommand;
+		function callback() {
+			this.checked = true;
+			currentChoice.checked = false;
+			currentChoice = this;
+			changeSplitModeCommand.imageClass = this.imageClass;
+			changeSplitModeCommand.name = this.name;
+			that.setSplitterMode(this.mode);
+			that.commandRegistry.destroy(toolbar);
+			that.commandRegistry.renderCommands(toolbar, toolbar, that, that, "button"); //$NON-NLS-0$
+		}
+		var choices = [
+			{name: messages["SplitSinglePage"], mode: MODE_SINGLE, imageClass: "core-sprite-page", checked: true, callback: callback}, //$NON-NLS-0$
+			{name: messages["SplitVertical"], mode: MODE_VERTICAL, imageClass: "core-sprite-vertical", callback: callback}, //$NON-NLS-0$
+			{name: messages["SplitHorizontal"], mode: MODE_HORIZONTAL, imageClass: "core-sprite-horizontal", callback: callback}, //$NON-NLS-0$
+			{name: messages["SplitPipInPip"], mode: MODE_PIP, imageClass: "core-sprite-pip", callback: callback}, //$NON-NLS-0$
+		];
+		currentChoice = choices[0];
+		changeSplitModeCommand = new mCommands.Command({
+			imageClass: currentChoice.imageClass,
+			selectionClass: "dropdownSelection", //$NON-NLS-0$
+			name: currentChoice.name,
+			tooltip: messages["SplitModeTooltip"],
+			id: "orion.edit.splitmode", //$NON-NLS-0$
 			visibleWhen: function() {
 				return true;
 			},
-			callback: function(data) {
-				var mode = data.command.tooltip;
-				this.setSplitterMode(mode);
-			}.bind(this)
+			choiceCallback: function() {
+				return choices;
+			}
 		});
-			
-		this.commandRegistry.addCommand(splitCommand);	
-		return splitCommand;
-	},
-	createSplitMenu: function(){
-		
-		var splitMenu = this.splitMenu = new mSplitMenu( 'SplitMenu' ); //$NON-NLS-0$
-		
-		var modes = splitMenu.modes;
-		
-		for( var mode in modes ){
-			var command = this._createSplitCommand( modes[mode].mode );		
-			splitMenu.addMenuItem( command );
-		}
-	},
+		this.commandRegistry.addCommand(changeSplitModeCommand);
+		this.commandRegistry.registerCommandContribution(toolbar, "orion.edit.splitmode", 0); //$NON-NLS-1$ //$NON-NLS-0$
+	}
 });
 
+var setup;
+exports.getEditorViewers = function() {
+	if (!setup) return [];
+	return setup.editorViewers;
+};
+
 exports.setUpEditor = function(serviceRegistry, pluginRegistry, preferences, readonly) {
-	enableSplitEditor = localStorage.enableSplitEditor === "true"; //$NON-NLS-0$
+	enableSplitEditor = localStorage.enableSplitEditor !== "false"; //$NON-NLS-0$
 	
-	var setup = new EditorSetup(serviceRegistry, pluginRegistry, preferences, readonly);
-	Deferred.when(setup.createBanner(), function() {
+	setup = new EditorSetup(serviceRegistry, pluginRegistry, preferences, readonly);
+	Deferred.when(setup.createBanner(), function(result) {
+		if (result && result.navSelection) {
+			//TODO find a better way to give the selection to the navigator
+			sessionStorage.navSelection = JSON.stringify(result.navSelection);
+		}
 		setup.createMenuBar().then(function() {
 			setup.createSideBar();
-			setup.editorViewers.push(setup.createEditorViewer());
-			setup.setActiveEditorViewer(setup.editorViewers[0]);
-			if (enableSplitEditor) {
-				setup.createSplitMenu();
-				setup.setSplitterMode(setup.splitMenu.MODE_SINGLE);
-			}
-			setup.load();
+			setup.createRunBar().then(function() {
+				setup.editorViewers.push(setup.createEditorViewer());
+				setup.setActiveEditorViewer(setup.editorViewers[0]);
+				if (enableSplitEditor) {
+					setup.createSplitMenu();
+					setup.setSplitterMode(MODE_SINGLE);
+				}
+				setup.load();
+			});
 		});
 	});
 };

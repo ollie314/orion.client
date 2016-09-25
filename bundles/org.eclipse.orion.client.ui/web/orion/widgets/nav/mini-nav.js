@@ -56,7 +56,15 @@ define([
 			return this.loadRoot(this.fileClient.fileServiceRootURL(item.Location)).then(function() {
 				return this.showItem(item, false); // call with reroot=false to avoid recursion
 			}.bind(this));
-		}
+		},
+		onModelCreate: function(evt) {
+			return CommonNavExplorer.prototype.onModelCreate.call(this, evt).then(function () {
+				if(evt && !evt.select) {
+					var fileMetadata = this.editorInputManager.getFileMetadata();
+					this.reveal(fileMetadata, true);
+				}
+			}.bind(this));
+		},
 	});
 
 	function MiniNavRenderer() {
@@ -129,7 +137,19 @@ define([
 			var params = PageUtil.matchResourceParameters();
 			var navigate = params.navigate, resource = params.resource;
 			var root = navigate || this.lastRoot || this.fileClient.fileServiceRootURL(resource || ""); //$NON-NLS-0$
-			this.explorer.display(root);
+			this.explorer.display(root).then(function() {
+				if (sessionStorage.navSelection) {
+					try {
+						JSON.parse(sessionStorage.navSelection).forEach(function(sel) {
+							this.explorer.select(sel, true);
+						}.bind(this));
+					} catch (e) {
+					} finally {
+						delete sessionStorage.navSelection;
+					}
+					
+				}
+			}.bind(this));
 		},
 		destroy: function() {
 			if (this.explorer) {

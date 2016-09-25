@@ -15,8 +15,8 @@
 define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18nUtil', 'orion/uiUtils', 'orion/fileUtils', 'orion/commands', 'orion/fileDownloader',
 	'orion/commandRegistry', 'orion/contentTypes', 'orion/compare/compareUtils', 
 	'orion/Deferred', 'orion/webui/dialogs/DirectoryPrompterDialog', 'orion/webui/dialogs/SFTPConnectionDialog',
-	'orion/EventTarget', 'orion/form', 'orion/xsrfUtils'],
-	function(messages, lib, i18nUtil, mUIUtils, mFileUtils, mCommands, mFileDownloader, mCommandRegistry, mContentTypes, mCompareUtils, Deferred, DirPrompter, SFTPDialog, EventTarget, form, xsrfUtils){
+	'orion/EventTarget', 'orion/form', 'orion/xsrfUtils', 'orion/bidiUtils', 'orion/util'],
+	function(messages, lib, i18nUtil, mUIUtils, mFileUtils, mCommands, mFileDownloader, mCommandRegistry, mContentTypes, mCompareUtils, Deferred, DirPrompter, SFTPDialog, EventTarget, form, xsrfUtils, bidiUtils, util){
 
 	/**
 	 * Utility methods
@@ -133,8 +133,16 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 							return;
 						}
 					}
+					if (result.Severity === "Error") {
+						if (handlers && handlers.error) {
+							handlers.error();
+							return;
+						}
+						errorHandler(result);
+					}
 				}
 				if (!preventNotification) {
+					//TODO Not sure if we should send out event from file Client here
 					dispatchModelEventOn({ type: "create", parent: targetFolder, newValue: null /* haven't fetched the new file in Orion yet */ }); //$NON-NLS-0$	
 				}
 			}
@@ -297,10 +305,23 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 						if (populateFunction) {
 							populateFunction(folder);
 						}
+						//TODO Not sure if we should send out event from file Client here
 						dispatchModelEventOn({type: "create", parent: loadedWorkspace, newValue: folder }); //$NON-NLS-0$
 					}, errorHandler);
 				}, 
-				errorHandler);
+				function(error) {
+					if (error.status === 400 || error.status === 412) {
+						var resp = error.responseText;
+						if (typeof resp === "string") {
+							try {
+								resp = JSON.parse(resp);
+								resp.Message = i18nUtil.formatMessage(messages["FailedToCreateProject"], name);
+								error = resp;
+							} catch(error) {}
+						}
+					}
+					errorHandler(error);
+				});
 			}, errorHandler);
 		}
 	}
@@ -388,27 +409,16 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 					selectedItems = [selectedItems];
 				}
 				var deferreds = [];
-				var summary = [];
 				var choice = this;
 				selectedItems.forEach(function(item) {
 					var func = isCopy ? fileClient.copyFile : fileClient.moveFile;
 					deferreds.push(func.apply(fileClient, [item.Location, choice.path, item.Name]).then(
 						function(newItem) {
-							summary.push({
-								oldValue: item,
-								newValue: newItem,
-								parent: choice.item
-							});
-							dispatchModelEvent({type: isCopy ? "copy" : "move", oldValue: item, newValue: newItem, parent: choice.item, count: selectedItems.length}); //$NON-NLS-1$ //$NON-NLS-0$
 						},
 						errorHandler
 					));
 				});
 				Deferred.all(deferreds).then(function() {
-					dispatchModelEvent({
-						type: isCopy ? "copyMultiple" : "moveMultiple", //$NON-NLS-1$ //$NON-NLS-0$
-						items: summary
-					});
 				});
 			};
 			
@@ -423,39 +433,36 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 								selectedItems = [selectedItems];
 							}
 							var deferreds = [];
-							var summary = [];
 							selectedItems.forEach(function(item) {
 								var location = targetFolder.Location;
-								var newName = item.Name || null;
+								var name = item.Name || null;
 								var func = isCopy ? fileClient.copyFile : fileClient.moveFile;
 								var message = i18nUtil.formatMessage(isCopy ? messages["Copying ${0}"] : messages["Moving ${0}"], item.Location);
-								if (isCopy && item.parent && item.parent.Location === location) {
-									newName = window.prompt(i18nUtil.formatMessage(messages["EnterName"], item.Name), i18nUtil.formatMessage(messages["Copy of ${0}"], item.Name));
-									// user cancelled?  don't copy this one
-									if (!newName) {
-										location = null;
+								function doOperation() {
+									if (location) {
+										var deferred = func.apply(fileClient, [item.Location, targetFolder.Location, name]);
+										deferreds.push(progressService.showWhile(deferred, message).then(
+											function() {
+											},
+											errorHandler
+										));
 									}
 								}
-								if (location) {
-									var deferred = func.apply(fileClient, [item.Location, targetFolder.Location, newName]);
-									deferreds.push(progressService.showWhile(deferred, message).then(
-										function(newItem) {
-											summary.push({
-												oldValue: item,
-												newValue: newItem,
-												parent: targetFolder
-											});
-											dispatchModelEvent({ type: isCopy ? "copy" : "move", oldValue: item, newValue: newItem, parent: targetFolder, count: selectedItems.length }); //$NON-NLS-1$ //$NON-NLS-0$
-										},
-										errorHandler
-									));
+								if (isCopy && item.parent && item.parent.Location === location) {
+									commandService.prompt(null, i18nUtil.formatMessage(messages['EnterName'], bidiUtils.enforceTextDirWithUcc(item.Name)), messages['Ok'], messages['Cancel'], 
+										i18nUtil.formatMessage(messages['Copy of ${0}'], item.Name), false, function(newName) {
+											// user cancelled?  don't copy this one
+											if (!newName) {
+												location = null;
+											}
+											name = newName;
+											doOperation();
+										});
+								}else{
+									doOperation();
 								}
 							});
 							Deferred.all(deferreds).then(function() {
-								dispatchModelEvent({
-									type: isCopy ? "copyMultiple" : "moveMultiple", //$NON-NLS-1$ //$NON-NLS-0$
-									items: summary
-								});
 							});
 						}
 					}
@@ -625,7 +632,6 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 						if (!item.parent) {
 							item.parent = parent;
 						}
-						dispatchModelEvent({ type: "move", oldValue: item, newValue: newItem, parent: parent }); //$NON-NLS-0$
 					},
 					errorHandler
 				);
@@ -794,13 +800,17 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 			visibleWhen: oneOrMoreFilesOrFolders,
 			callback: function(data) {
 				var items = Array.isArray(data.items) ? data.items : [data.items];
-				var confirmMessage = items.length === 1 ? i18nUtil.formatMessage(messages["DeleteTrg"], items[0].Name) : i18nUtil.formatMessage(messages["delete item msg"], items.length);
+				var deleteItemName = items.length === 1 ? items[0].Name : '';			
+				if (bidiUtils.isBidiEnabled()) {
+					deleteItemName = bidiUtils.enforceTextDirWithUcc(deleteItemName);
+				}
+				var confirmMessage = items.length === 1 ? i18nUtil.formatMessage(messages["DeleteTrg"], deleteItemName) : i18nUtil.formatMessage(messages["delete item msg"], items.length);
 				serviceRegistry.getService("orion.page.dialog").confirm(confirmMessage,  //$NON-NLS-0$
 					function(doit) {
 						if (!doit) {
 							return;
 						}
-						var summary = [];
+						fileClient.freezeChangeEvents();
 						var deferredDeletes = items.map(function(item) {
 							var deleteLocation = item.Location;
 							return Deferred.when(getLogicalModelItems(item), function(logicalItems) {
@@ -824,25 +834,19 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 								if (!deleteLocation) {
 									return new Deferred().resolve();
 								}
-								var _delete = fileClient.deleteFile(deleteLocation);
+								var _delete = fileClient.deleteFile(deleteLocation, {itemLocation: item.Location});
 								return progressService.showWhile(_delete, i18nUtil.formatMessage(messages["Deleting ${0}"], deleteLocation)).then(
 									function() {
-										summary.push({
-											oldValue: item,
-											newValue: null,
-											parent: parent
-										});
 										// Remove deleted item from copy/paste buffer
 										bufferedSelection = bufferedSelection.filter(function(element){
 											// deleted item is neither equivalent nor a parent of the array element
 											return !fileCommandUtils.isEqualToOrChildOf(element, item);
 										});
-										dispatchModelEvent({ type: "delete", oldValue: item, newValue: null, parent: parent, count: items.length }); //$NON-NLS-0$
 									}, errorHandler);
 							});
 						});
 						Deferred.all(deferredDeletes).then(function() {
-							dispatchModelEvent({ type: "deleteMultiple", items: summary }); //$NON-NLS-0$
+							fileClient.thawChangeEvents();
 						}, errorHandler);
 					}
 				);	
@@ -912,13 +916,29 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 			var createFunction = function(name) {
 				if (name) {
 					var location = parentItem.Location;
+					if(location === "/workspace/orionode" && util.isElectron && !isDirectory ){
+						// Special case for electron only to create files at workspace level.
+						location = "/file";
+					}
 					var functionName = isDirectory ? "createFolder" : "createFile";
-					var deferred = fileClient[functionName](location, name);
+					var deferred = fileClient[functionName](location, name, {select: true});
 					progressService.showWhile(deferred, i18nUtil.formatMessage(messages["Creating ${0}"], name)).then(
 						function(newArtifact) {
-							dispatchModelEvent({ type: "create", parent: parentItem, newValue: newArtifact }); //$NON-NLS-0$
 						},
-						errorHandler);
+						function(error) {
+							if (error.status === 400 || error.status === 412) {
+								var resp = error.responseText;
+								if (typeof resp === "string") {
+									try {
+										resp = JSON.parse(resp);
+										resp.Message = i18nUtil.formatMessage(messages["FailedToCreateFile"], name);
+										error = resp;
+									} catch(error) {}
+								}
+							}
+							errorHandler(error);
+						}
+					);
 				}
 			};
 			
@@ -949,7 +969,9 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 				var item = getParentItem(data.items);
 				createNewArtifact(messages["New File"], item, false);
 			},
-			visibleWhen: checkFolderSelection
+			visibleWhen: function(item) {
+				return checkFolderSelection(item) || util.isElectron;
+			}
 		});
 		commandService.addCommand(newFileCommand);
 		
@@ -982,10 +1004,9 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 					var importURL = targetFolder.ImportLocation + (targetFolder.ImportLocation.indexOf("?")=== -1 ? "?":"&") + "source="+sourceURL; //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 					var expandZip = data.parameters && data.parameters.valueFor("unzip") && (sourceURL.indexOf(".zip") === sourceURL.length-4); //$NON-NLS-1$ //$NON-NLS-0$
 					var optionHeader = expandZip ? "" : "raw"; //$NON-NLS-1$ //$NON-NLS-0$
-					var deferred = fileClient.remoteImport(importURL, {"OptionHeader":optionHeader}); //$NON-NLS-0$
+					var deferred = fileClient.remoteImport(importURL, {"OptionHeader":optionHeader}, targetFolder.Location); //$NON-NLS-0$
 					progressService.showWhile(deferred, i18nUtil.formatMessage(messages["Importing from ${0}"], sourceURL)).then(
 						function() {
-							dispatchModelEvent({ type: "import", target: targetFolder }); //$NON-NLS-0$
 						}
 					);
 				}
@@ -1030,7 +1051,6 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 					if (name && url) {
 						var deferred = fileClient.createProject(explorer.treeRoot.ChildrenLocation, name, url, true);
 						progressService.showWhile(deferred, i18nUtil.formatMessage(messages["Linking to ${0}"], url)).then(function(newFolder) {
-							dispatchModelEventOn({type: "create", parent: explorer.treeRoot, newValue: newFolder }); //$NON-NLS-0$
 						}, errorHandler);
 					}
 				};
@@ -1131,10 +1151,9 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 					func:  function(host,port,path,user,password, overwriteOptions){
 						var optionHeader = overwriteOptions ? "sftp,"+overwriteOptions : "sftp"; //$NON-NLS-1$ //$NON-NLS-0$
 						var importOptions = {"OptionHeader":optionHeader,"Host":host,"Port":port,"Path":path,"UserName":user,"Passphrase":password}; //$NON-NLS-5$ //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-						var deferred = fileClient.remoteImport(item.ImportLocation, importOptions);
+						var deferred = fileClient.remoteImport(item.ImportLocation, importOptions, item.Location);
 						progressService.showWhile(deferred, i18nUtil.formatMessage(messages["Importing from ${0}"], host)).then(
 							function(result) {
-								dispatchModelEvent({ type: "import", target: item }); //$NON-NLS-0$
 								errorHandler(result);
 							},
 							errorHandler
@@ -1264,8 +1283,8 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 							return;
 						}
 						var fileOperation = isCutInProgress ? fileClient.moveFile : fileClient.copyFile;
-						var summary = [];
 						var deferreds = [];
+						fileClient.freezeChangeEvents();
 						bufferedSelection.forEach(function(selectedItem) {
 							var location = selectedItem.Location;
 							var name = selectedItem.Name || null;
@@ -1283,35 +1302,34 @@ define(['i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 'orion/i18n
 										});
 									}
 								}
-								if (prompt) {
-									name = window.prompt(i18nUtil.formatMessage(messages['EnterName'], selectedItem.Name), i18nUtil.formatMessage(messages['Copy of ${0}'], selectedItem.Name));
-									// user cancelled?  don't copy this one
-									if (!name) {
-										location = null;
+								function doOperation() {
+									if (location) {
+										var deferred1 = fileOperation.apply(fileClient, [location, itemLocation, name]);
+										var messageKey1 = isCutInProgress ? "Moving ${0}": "Pasting ${0}"; //$NON-NLS-1$ //$NON-NLS-0$
+										deferreds.push(progressService.showWhile(deferred1, i18nUtil.formatMessage(messages[messageKey1], location)).then(
+											function() {
+											},
+											errorHandler));
 									}
 								}
-								if (location) {
-									var deferred = fileOperation.apply(fileClient, [location, itemLocation, name]);
-									var messageKey = isCutInProgress ? "Moving ${0}": "Pasting ${0}"; //$NON-NLS-1$ //$NON-NLS-0$
-									var eventType = isCutInProgress ? "move": "copy"; //$NON-NLS-1$ //$NON-NLS-0$
-									deferreds.push(progressService.showWhile(deferred, i18nUtil.formatMessage(messages[messageKey], location)).then(
-										function(result) {
-											summary.push({
-												oldValue: selectedItem,
-												newValue: result,
-												parent: item
-											});
-											dispatchModelEvent({ type: eventType, oldValue: selectedItem, newValue: result, parent: item, count: bufferedSelection.length });
-										},
-										errorHandler));
+								if (prompt) {
+									var node = document.getElementById("pageSidebar" + item.Location.split('/').slice(1).join(""));
+									commandService.prompt(node, i18nUtil.formatMessage(messages['EnterName'], bidiUtils.enforceTextDirWithUcc(selectedItem.Name)), messages['Ok'], messages['Cancel'], 
+										i18nUtil.formatMessage(messages['Copy of ${0}'], selectedItem.Name), false, function(newname) {
+											// user cancelled?  don't copy this one
+											if (!newname) {
+												location = null;
+											}
+											name = newname;
+											doOperation();
+									});
+								}else{
+									doOperation();
 								}
 							}
 						});
 						Deferred.all(deferreds).then(function() {
-							dispatchModelEvent({
-								type: isCutInProgress ? "moveMultiple" : "copyMultiple", //$NON-NLS-1$ //$NON-NLS-0$
-								items: summary
-							});
+							fileClient.thawChangeEvents();
 							
 							if (isCutInProgress) {
 								var navHandler = explorer.getNavHandler();

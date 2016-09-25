@@ -68,15 +68,11 @@ define([
         return span;
     }
 
-	function getFullPathPref(preferences, prefName, properties) {
-    	return preferences.getPreferences(prefName).then(function(prefs) { //$NON-NLS-0$
+	function getPrefs(preferences, prefName, properties) {
+    	return preferences.get(prefName).then(function(prefs) { //$NON-NLS-0$
 			var returnVal = [];
 			properties.forEach(function(property){
-				var value = prefs.get(property);
-				if (value === undefined) {
-					value = false;
-					prefs.put(property, value); //$NON-NLS-0$
-				}
+				var value = !!prefs[property];
 		        returnVal.push(value);
 			});
 	        return new Deferred().resolve(returnVal);
@@ -93,18 +89,32 @@ define([
         }
     }
 
-    function switchFullPathPref(preferences, prefName, properties) {
-    	return preferences.getPreferences(prefName).then(function(prefs) { //$NON-NLS-0$
+    function togglePrefs(preferences, prefName, properties) {
+    	return preferences.get(prefName).then(function(prefs) { //$NON-NLS-0$
 			var returnVal = [];
 			properties.forEach(function(property){
-				var value = !prefs.get(property);
-		        prefs.put(property, value);
+				var value = !prefs[property];
+		        prefs[property] = value;
 		        returnVal.push(value);
 			});
+			preferences.put(prefName, prefs);
 	        return new Deferred().resolve(returnVal);
 		}, function(/*err*/){
 			return new Deferred().resolve();
 		});
+    }
+    
+    function wrapDetailElement(item, spanHolder, link, explorer) {
+        spanHolder.appendChild(link);
+        link.classList.add("searchDetailLink"); //$NON-NLS-0$
+       
+       	mNavUtils.addNavGrid(explorer.getNavDict(), item, link);
+       	//trigger a click on the span when the link is clicked to set the selection cursor
+//       	_connect(link, "click", function() { //$NON-NLS-0$
+//       		spanHolder.click();
+//        });
+        var span = _createElement('span', null, null, link); //$NON-NLS-0$
+        return span;
     }
 
 	function FileDetailRenderer(options, explorer) {
@@ -132,8 +142,10 @@ define([
 	    	var renderName;
 	    	if (item.totalMatches) {
 	    		renderName = this.explorer.model.getFileName(item) + " (" + i18nUtil.formatMessage(messages["${0} matches"], item.totalMatches) + ")"; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-	    	} else {
+	    	} else if(item.type === 'file') {
 	    		renderName = this.explorer.model.getFileName(item);
+	    	} else if(item.type === 'group') {
+	    		renderName = item.name;
 	    	}
 	    	return renderName;
 	    },
@@ -144,6 +156,28 @@ define([
 			fileSpan.appendChild(document.createTextNode(renderName));
 			return fileSpan;
 	    },
+	    /**
+    	 * @description Renders the name of the group in its span
+    	 * @function
+    	 * @param {Object} item The backing group item to render
+    	 * @param {DOMNode} spanHolder The DOM element to hold the rendered element
+    	 * @since 10.0
+    	 */
+    	renderGroupElement: function renderGroupElement(item, spanHolder) {
+			var nameSpan = document.createElement("span"); //$NON-NLS-0$
+			nameSpan.appendChild(document.createTextNode(item.name)); //$NON-NLS-0$
+			nameSpan.classList.add("groupNameSpan"); //$NON-NLS-0$
+	        spanHolder.appendChild(nameSpan);
+   			var countSpan = document.createElement("span"); //$NON-NLS-0$
+   			var message = i18nUtil.formatMessage(messages["(${0})"], item.children.length);
+   			if(item.children.length === 1) {
+   				message = messages["singleMatch"];
+   			}
+			countSpan.appendChild(document.createTextNode(message));
+			countSpan.classList.add("groupCountSpan"); //$NON-NLS-0$
+	        spanHolder.appendChild(countSpan);
+			spanHolder.classList.add("groupParentSpan"); //$NON-NLS-0$
+	    },
 	    renderFileElement: function(item, spanHolder, resultModel) {
 			var link = this.generateFileLink(resultModel, item);
 			mNavUtils.addNavGrid(this.explorer.getNavDict(), item, link);
@@ -151,7 +185,6 @@ define([
 			var scopeParams = resultModel.getScopingParams(item);
 			var folders = decodeURIComponent(scopeParams.name).split("/"); //$NON-NLS-0$
 			var parentFolder = folders.pop();
-			parentFolder = parentFolder;
 			
 			if (0 < folders.length) {
 				var fullPathSpan = document.createElement("span"); //$NON-NLS-0$
@@ -178,9 +211,9 @@ define([
 			link.appendChild(fileSpan);
 	
 			//trigger a click on the span when the link is clicked to set the selection cursor
-			link.addEventListener("click", function(){ //$NON-NLS-0$
-				spanHolder.click();
-			});
+//			link.addEventListener("click", function(){ //$NON-NLS-0$
+//				spanHolder.click();
+//			});
 	
 			// append link to parent span
 	        spanHolder.appendChild(link);
@@ -188,29 +221,44 @@ define([
 	    },
 	    _generateDetailSegments: function(detailModel) {
 	        var detailInfo = this.explorer.model.getDetailInfo(detailModel);
-	        var startIndex = 0;
 	        var segments = [];
-	        for (var i = 0; i < detailInfo.matches.length; i++) {
-	            if (startIndex >= detailInfo.lineString.length) {
-					break;
-	            }
-	            if (this.enableCheckbox(detailModel)) {
+	        var lineString = detailInfo.lineString;
+	        if(detailModel.parent.type === 'group') {
+	        	var end = detailModel.startIndex+detailModel.length;
+	        	if(detailModel.startIndex > 0) {
+			    	segments.push({name: lineString.substring(0, detailModel.startIndex), startIndex: 0, bold: false, highlight: false});
+	        	}
+	        	segments.push({
+	        		name: lineString.substring(detailModel.startIndex, end), 
+	        		startIndex: detailModel.startIndex, 
+	        		bold: true, 
+	        		highlight: false
+	        	});
+	        	if (end < lineString.length) {
+		            segments.push({name: lineString.substring(end), startIndex: end, bold: false, highlight: false});
+		        }
+	        } else {
+		        var startIndex = 0;
+		        for (var i = 0; i < detailInfo.matches.length; i++) {
+		            if (startIndex >= lineString.length) {
+						break;
+		            }
+	                //if (this.enableCheckbox(detailModel))
 	                if (i !== detailInfo.matchNumber) {
 	                    continue;
 	                }
-	            }
-	            if (startIndex !== detailInfo.matches[i].startIndex) {
-	                segments.push({name: detailInfo.lineString.substring(startIndex, detailInfo.matches[i].startIndex), startIndex: startIndex, bold: false, highlight: false});
-	            }
-	            var  gap = detailInfo.matches[i].length;
-	            segments.push({name: detailInfo.lineString.substring(detailInfo.matches[i].startIndex, detailInfo.matches[i].startIndex + gap), startIndex: detailInfo.matches[i].startIndex, bold: true, highlight: false});
-	            startIndex = detailInfo.matches[i].startIndex + gap;
-	            if (this.enableCheckbox(detailModel)) {
-	                break;
-	            }
-	        }
-	        if (startIndex < (detailInfo.lineString.length - 1)) {
-	            segments.push({name: detailInfo.lineString.substring(startIndex), startIndex: startIndex, bold: false, highlight: false});
+		            if (startIndex !== detailInfo.matches[i].startIndex) {
+		                segments.push({name: lineString.substring(startIndex, detailInfo.matches[i].startIndex), startIndex: startIndex, bold: false, highlight: false});
+		            }
+		            var  gap = detailInfo.matches[i].length;
+		            segments.push({name: lineString.substring(detailInfo.matches[i].startIndex, detailInfo.matches[i].startIndex + gap), startIndex: detailInfo.matches[i].startIndex, bold: true, highlight: false});
+		            startIndex = detailInfo.matches[i].startIndex + gap;
+					//if (this.enableCheckbox(detailModel))
+					break;
+		        }
+		        if (startIndex < lineString.length - 1) {
+		            segments.push({name: lineString.substring(startIndex), startIndex: startIndex, bold: false, highlight: false});
+		        }
 	        }
 	        return segments;
 	    },
@@ -265,32 +313,29 @@ define([
 	        var linkSpan = this.getDetailElement(item, spanHolder);
 	        this.generateDetailHighlight(item, linkSpan);
 	    },
-	    renderDetailLineNumber: function(item, spanHolder) {
+	    renderDetailLineNumber: function(item, spanHolder, showFile) {
 			var detailInfo = this.explorer.model.getDetailInfo(item);
 			var lineNumber = detailInfo.lineNumber + 1;
+			var span = document.createElement("span"); //$NON-NLS-1$
+			span.className = "fileLineSpan"; //$NON-NLS-1$
+			if (showFile) {
+				var loc = item.location;
+				_place(document.createTextNode(loc.substring(loc.lastIndexOf('/') + 1) + "@"), span, "last"); //$NON-NLS-1$ //$NON-NLS-0$
+			}
 	        if (!this.enableCheckbox(item) || detailInfo.matches.length <= 1) {
-	            _place(document.createTextNode(lineNumber + ":"), spanHolder, "last"); //$NON-NLS-1$ //$NON-NLS-0$
+	            _place(document.createTextNode(lineNumber + ":"), span, "last"); //$NON-NLS-1$ //$NON-NLS-0$
 	        } else {
 				var matchNumber = detailInfo.matchNumber + 1;
-	            _place(document.createTextNode(lineNumber + "(" + matchNumber + "):"), spanHolder, "last"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+	            _place(document.createTextNode(lineNumber + "(" + matchNumber + "):"), span, "last"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 	        }
+	        spanHolder.appendChild(span);
 	    },
 	    getDetailElement: function(item, spanHolder) {
 	    	var link = this.generateDetailLink(item);
-	        spanHolder.appendChild(link);
-	        link.classList.add("searchDetailLink"); //$NON-NLS-0$
-	       
-	       	mNavUtils.addNavGrid(this.explorer.getNavDict(), item, link);
-	       	//trigger a click on the span when the link is clicked to set the selection cursor
-	       	_connect(link, "click", function() { //$NON-NLS-0$
-	       		spanHolder.click();
-	        });
-	        
-	        var span = _createElement('span', null, null, link); //$NON-NLS-0$
-	        return span;
+	    	return wrapDetailElement(item, spanHolder, link, this.explorer);
 	    },
 	    enableCheckbox: function(item) {
-	    	return (typeof this.explorer.model.enableCheckbox === "function" && this.explorer.model.enableCheckbox(item)); //$NON-NLS-0$
+	    	return typeof this.explorer.model.enableCheckbox === "function" && this.explorer.model.enableCheckbox(item); //$NON-NLS-0$
 	    },
 	    generateDetailDecorator: function(/*item, col*/) {
 	    },
@@ -302,44 +347,51 @@ define([
 	                if (item.type === "file") { //$NON-NLS-0$
 	                	col = _createElement('td'); //$NON-NLS-0$
 	                    col.noWrap = true;
-						span = _createSpan(null, this.getFileIconId ? this.getFileIconId(item) : null, col, null);                    
-						this._lastFileIconDom = span;
-	                    
 	                    if(typeof this.explorer.model.disableExpand === "function" && this.explorer.model.disableExpand(item)){ //$NON-NLS-0$
 	                        //var decorateImage = _createSpan(null, null, col, null);
 	                        //decorateImage.classList.add('imageSprite'); //$NON-NLS-0$
 	                        //decorateImage.classList.add('core-sprite-file'); //$NON-NLS-0$
 	                    } else {
-	                        this.getExpandImage(tableRow, span); //$NON-NLS-0$
+	                        this.getExpandImage(tableRow, _createSpan(null, null, col, null)); //$NON-NLS-0$
 	                    }
+	                } else if (item.type === "group") { //$NON-NLS-0$
+	                	col = _createElement('td'); //$NON-NLS-0$
+	                    col.noWrap = true;
+	                    this.getExpandImage(tableRow, _createSpan(null, null, col, null)); //$NON-NLS-0$
 	                } else {
 	                	if (typeof this.explorer.model.enableCheckbox === "function" && this.explorer.model.enableCheckbox(item)) { //$NON-NLS-0$
 	                		col = mExplorer.ExplorerRenderer.prototype.getCheckboxColumn.call(this, item, tableRow);
 	                	} else {
 	                		col = _createElement('td'); //$NON-NLS-0$
 	                		span = _createSpan(null, null, col, null);
-	                		this.renderDetailLineNumber(item, span);
+	                		_place(document.createTextNode("", span, "last")); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 	                	}
 	                }
 	                break;
 	            case 1:
 					col = _createElement('td'); //$NON-NLS-0$
 	                if (item.type === "file") { //$NON-NLS-0$
+	                	col.colSpan = 2;
+						span = _createSpan(null, this.getFileIconId ? this.getFileIconId(item) : null, col, null);                    
+						this._lastFileIconDom = span;
 	                	span = _createSpan(null, this.getFileSpanId(item), col, null);
 	                    this.renderFileElement(item, span, this.explorer.model);
-	                    
-	                    //render file location
-	                    if (item.parentLocation) {
-							var scopeParams = this.explorer.model.getScopingParams(item);
-							tableRow.title = decodeURI(scopeParams.name + "/" + item.name); //$NON-NLS-0$
-	                    }
+						tableRow.title = item.name;
+	                } else if (item.type === "group") { //$NON-NLS-0$
+	                	col.colSpan = 2;
+	                	span = _createSpan(null, null, col, null);
+	                    this.renderGroupElement(item, span, this.explorer.model);
+						tableRow.title = item.name;
 	                } else {
-	                	if (this.enableCheckbox(item)) {
-	                		this.renderDetailLineNumber(item, col);
-	                	}
-	                    this.renderDetailElement(item, col);
+	                	this.renderDetailLineNumber(item, col, item.parent.type === "group");
 	                }
 	                break;
+	            case 2: 
+	                if (item.type !== "file" && item.type !== "group") { //$NON-NLS-0$
+		            	col = _createElement('td'); //$NON-NLS-0$
+	                    this.renderDetailElement(item, col);
+                	}
+					break;
 				case 20: //TODO fix look and feel, re-enable
 					if (item.type === "file") { //$NON-NLS-0$
 						col = _createElement('td'); //$NON-NLS-0$
@@ -386,22 +438,30 @@ define([
 	        return this.explorer.model.getId(itemOrId) + "_itemLink"; //$NON-NLS-0$
 	    },
 	    getPrimColumnStyle: function(item) {
-	        if(item && item.type === "file") { //$NON-NLS-0$
-	        	return "search_primaryColumn"; //$NON-NLS-0$
-	        } else {
-	        	return  "search_primaryColumn_Details"; //$NON-NLS-0$
-	        }
+	        if(item) {
+	        	if(item.type === 'group') {
+	        		return 'refs_primaryColumn'; //$NON-NLS-1$
+	        	} else if(item.type === 'file') {
+	        		return "search_primaryColumn"; //$NON-NLS-1$
+	        	} 
+	        } 
+	        return  "search_primaryColumn_Details"; //$NON-NLS-0$
 	    },
-	    getSecondaryColumnStyle: function() {
+	    getSecondaryColumnStyle: function(i) {
+	    	if (i === 2) {
+	    		return "search_secondaryColumn_line"; //$NON-NLS-0$
+	    	}
 	        return "search_secondaryColumn"; //$NON-NLS-0$
 	    }
 	});
 	
 	return {
 		FileDetailRenderer: FileDetailRenderer,
-		switchFullPathPref: switchFullPathPref,
-		getFullPathPref: getFullPathPref,
-		showFullPath: showFullPath
+		togglePrefs: togglePrefs,
+		getPrefs: getPrefs,
+		showFullPath: showFullPath,
+		wrapDetailElement: wrapDetailElement
 	};
 
 });
+	

@@ -8,8 +8,8 @@
 }
 
 .progressInfo {
-	color: #468847 !important;
-	background-color: #dff0d8 !important;
+	color: white !important;
+	background-color: #1BB199 !important;
 }
 
 /* More prominent hyperlinks in notification area */
@@ -18,22 +18,23 @@
 }
 
 .progressWarning {
-	color: #c09853 !important;
-	background-color: #fcf8e3 !important;
-	border: 1px solid #fbeed5 !important;
+	color: white !important;
+	background-color: #f0ad4e !important;
+	border: 1px solid #f0ad4e !important;
 }
 
 .progressError {
-	color: #b94a48 !important;
-	background-color: #f2dede !important;
-	border: 1px solid #eed3d7 !important;
+	color: white !important;
+	background-color: #d9534f !important;
+	border: 1px solid #d9534f !important;
 }
 
 .progressNormal {
-	color: #468847 !important;
-	background-color: #dff0d8 !important;
-	border: 1px solid #d6e9c6 !important;
+	color: white !important;
+	background-color: #1BB199 !important;
+	border: 1px solid #1BB199 !important;
 }
+
 .progressPane {
 	vertical-align: middle;
 	margin-right: 24px;
@@ -53,12 +54,16 @@
 	height: 16px;
 	background: transparent;
 	border: none;
-	margin-right: 10px;
+	margin-right: 6px;
+	margin-left: 12px;
+	flex: 0 0 auto;
+	-ms-flex: 0 0 auto;
+	-webkit-flex: 0 0 auto;
 }
 
 .watchButton {
-	border-top: 1px solid #ddd;
-	position: absolute;
+	border-top: 1px solid #626e76;
+	position: relative;
 	top: 0;
 	width: 3px;
 	left: calc(50% - 2px);
@@ -68,13 +73,13 @@
 }
 
 .watchBody {
-	position: absolute;
+	position: relative;
 	left: 1px;
-	top: 2px;
+	top: 1px;
 	width: calc(100% - 5px); /* subtract borders and button height */
 	height: calc(100% - 5px); /* subtract borders, button height and space between button and body */
 	background: transparent;
-	border: 1px solid #ddd;
+	border: 1px solid #626e76;
 	-moz-border-radius: 50%;
 	-webkit-border-radius: 50%;
 	border-radius: 50%;
@@ -102,7 +107,7 @@
 	display: block;
 	border-radius: 40%;
 	height: 5px;
-	background: #ddd;
+	background: #626e76;
 	transition: background-color 1s ease;
 }
 
@@ -121,7 +126,7 @@
 	border-radius: 40%;
 	right: 0;
 	width: 4px;
-	background: #ddd;
+	background: #626e76;
 	
 	transition: background-color 1s ease;
 }
@@ -152,20 +157,20 @@
 }
 
 .progressWatch.running .watchButton {
-	border-color: #333333;
+	border-color: white;
 	top: 1px;
 }
 
 .progressWatch.running .watchBody {
-	border-color: #333333;
+	border-color: white;
 }
 
 .progressWatch.running .watchBody .hand.longHour > .darkSide {
-	background-color: #333333;
+	background-color: white;
 }
 
 .progressWatch.running .watchBody .hand.longMinute > .darkSide {
-	background-color: #333333;
+	background-color: white;
 }
 
 /* warning */
@@ -222,10 +227,8 @@
 	100% { transform: rotate(360deg);}
 }
 
-
-
 .progressWarning .progressPane_running, .progressWarning .core-sprite-progress {
-	border-color: #c09853; 
+	border-color: #f0ad4e; 
 }
 
 .progressError .progressPane_running, .progressError .core-sprite-progress {
@@ -257,25 +260,23 @@
 }
 
 .notificationShow {
-	color: #468847; 
-	background-color: #dff0d8; 
+	color: white; 
+	background-color: #1BB199; 
 	top: 0;
 	position: fixed;
 	float: left; 
 	margin-left: 20%; 
 	margin-right: auto; 
 	width: 60%; 
-/*	box-shadow: 0 2px 0 rgba(0,0,0,0.1); */
 	max-height: 1000px; 
 	overflow: hidden;
 	padding-top: 5px;
 	padding-bottom: 5px;
 	padding-left: 5px;
-	z-index: 100; 
+	z-index: 7000; 
 	border-bottom-right-radius: 5px; 
 	border-bottom-left-radius: 5px; 
-	border: 1px solid #dff0d8;
-	border-top:none;
+	border:none;
 	transition:top 0.7s;
 	-webkit-transition: top 0.7s;	
 	-moz-transition: top 0.7s;
@@ -283,8 +284,8 @@
 	-o-transition: top 0.7s;
 }
 .notificationHide {
-	color: #468847; 
-	background-color: #dff0d8; 
+	color: white; 
+	background-color: #1BB199; 
 	top: -45px;
 	position: fixed;
 	text-align:center;
@@ -296,7 +297,7 @@
 	max-height: 1000px; 
 	overflow: hidden;
 	padding-left: 5px;
-	z-index: 100; 
+	z-index: 300;
 	border-bottom-right-radius: 5px; 
 	border-bottom-left-radius: 5px; 
 	transition:top 0.7s;
@@ -304,6 +305,11 @@
 	-moz-transition: top 0.7s;
 	-ms-transition: top 0.7s;
 	-o-transition: top 0.7s;
+}
+
+.notifications a {
+	color: white;
+	text-decoration: underline;
 }
 
 .notifications {

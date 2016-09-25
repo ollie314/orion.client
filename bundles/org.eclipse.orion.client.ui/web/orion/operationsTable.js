@@ -1,5 +1,5 @@
 /*******************************************************************************
- * @license Copyright (c) 2011, 2012 IBM Corporation and others. All rights reserved.
+ * @license Copyright (c) 2011, 2016 IBM Corporation and others. All rights reserved.
  *          This program and the accompanying materials are made available under
  *          the terms of the Eclipse Public License v1.0
  *          (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse
@@ -9,8 +9,8 @@
  * Contributors: IBM Corporation - initial API and implementation
  ******************************************************************************/
 /*eslint-env browser, amd*/
-define(['i18n!orion/operations/nls/messages', 'orion/webui/littlelib', 'orion/explorers/explorer', 'orion/operationsCommands', 'orion/metrics'
-	], function(messages, lib,	mExplorer, mOperationsCommands, mMetrics) {
+define(['i18n!orion/operations/nls/messages', 'orion/Deferred', 'orion/webui/littlelib', 'orion/explorers/explorer', 'orion/operationsCommands', 'orion/metrics'
+	], function(messages, Deferred, lib,	mExplorer, mOperationsCommands, mMetrics) {
 	
 	var exports = {};
 
@@ -19,6 +19,7 @@ define(['i18n!orion/operations/nls/messages', 'orion/webui/littlelib', 'orion/ex
 			this.parentId = parentId;
 			this.registry = registry;
 			this.commandRegistry = commandRegistry;
+			this.preferences = registry.getService("orion.core.preference"); //$NON-NLS-1$
 			this.selection = selection;
 			this.toolbarId = toolbarId;
 			this.selectionToolsId = selectionToolsId;
@@ -45,53 +46,63 @@ define(['i18n!orion/operations/nls/messages', 'orion/webui/littlelib', 'orion/ex
 				
 				that.serviceRegistry.getService("orion.page.message").setProgressResult(display); //$NON-NLS-0$
 			}
+			var preferences = this.preferences;
 			this.operationsClient.getOperations().then(function(globalOperations){
-				var operationLocations = globalOperations.keys();
+				var operationLocations = Object.keys(globalOperations);
 				var operations = {};
-				for(var i=0; i<operationLocations.length; i++){
-					var operationLocation = operationLocations[i];
-					var operation = globalOperations.get(operationLocation);
+				Deferred.all(operationLocations.map(function(operationLocation) {
+					var operation = globalOperations[operationLocation];
 					operation.Location = operationLocation;
 					operations[operationLocation]= operation;
-					if(operation.expires && new Date().getTime()>operation.expires){
-						//operations expired
-						globalOperations.remove(operationLocation);
+					var done = new Deferred();
+					if(operation.expires && Date.now()>operation.expires){
+						delete globalOperations[operationLocation];
 						delete operations[operationLocation];
-						continue;
+						done.resolve();
+						return done;
 					}
 					var success = function (result){
-						operations[this].operation = operations[this].operation || {};
-						operations[this].operation.type = "loadend";
-						that.changedItem(this);
+						var loc = String(this)
+						operations[loc].operation = operations[loc].operation || {};
+						operations[loc].operation.type = "loadend";
+						that.changedItem(loc);
+						done.resolve();
 					};
 					var progress = function(operation){
-						operations[this].operation = operation;
-						that.changedItem(this);
+						var loc = String(this)
+						operations[loc].operation = operation;
+						that.changedItem(loc);
+						done.resolve();
 					};
 					var failure = function(error) {
+						var loc = String(this)
 						if(error.canceled){
-							operation.deferred = that.operationsClient.getOperation(this);
-							operation.deferred.then(success.bind(this), failure.bind(this), progress.bind(this));
+							operation.deferred = that.operationsClient.getOperation(loc);
+							operation.deferred.then(success.bind(loc), failure.bind(loc), progress.bind(loc));
 							return;
 						}
-						if(error.HttpCode===404 && error.JsonData && error.JsonData.taskNotFound){
-							globalOperations.remove(this);
-							delete operations[this];
+						if(error.HttpCode===404 || error.status===404 || error.status===410){
+							delete globalOperations[operationLocation];
+							delete operations[loc];
 							that._loadOperationsList.bind(that)(operations);
-							return;
+						} else {
+							operations[loc].operation = operations[loc].operation || {};
+							if(error.Severity==="Cancel"){
+								operations[loc].operation.type = "abort";
+							}else{
+								operations[loc].operation.type = "error";
+							}
+							operations[loc].operation.error = error;
+							that.changedItem(loc);
 						}
-						operations[this].operation = operations[this].operation || {};
-						if(error.Severity==="Cancel"){
-							operations[this].operation.type = "abort";
-						}else{
-							operations[this].operation.type = "error";
-						}
-						operations[this].operation.error = error;
-						that.changedItem(this);
+						done.resolve();
 					}; 
 					operation.deferred = that.operationsClient.getOperation(operationLocation);
 					operation.deferred.then(success.bind(operationLocation), failure.bind(operationLocation), progress.bind(operationLocation));
-				}
+					return done;
+				})).then(function() {
+					preferences.put("/operations", globalOperations, {clear: true});
+				});
 				that._loadOperationsList.bind(that)(operations);
 
 				mMetrics.logPageLoadTiming("complete", window.location.pathname); //$NON-NLS-0$
@@ -137,7 +148,7 @@ define(['i18n!orion/operations/nls/messages', 'orion/webui/littlelib', 'orion/ex
 		};
 		
 		OperationsModel.prototype.getChildren = function(parentItem, onComplete){
-			if(!parentItem || !parentItem.type==="operations"){
+			if(!parentItem || parentItem.type !== "operations"){
 				onComplete([]);
 				return;
 			}

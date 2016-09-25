@@ -20,8 +20,6 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 	var Explorer = mExplorer.Explorer;
 	var SelectionRenderer = mExplorer.SelectionRenderer;
 
-	var defaultPluginURLs = {};
-	
 	function _normalizeURL(location) {
 		if (location.indexOf("://") === -1) { //$NON-NLS-0$
 			var temp = document.createElement('a'); //$NON-NLS-0$
@@ -31,15 +29,6 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 		return location;
 	}
 	
-	// This is temporary see Bug 368481 - Re-examine localStorage caching and lifecycle
-	var defaultPluginsStorage = localStorage.getItem("/orion/preferences/default/plugins"); //$NON-NLS-0$
-	if (defaultPluginsStorage) {
-		var pluginsPreference = JSON.parse(defaultPluginsStorage);
-		Object.keys(pluginsPreference).forEach(function(pluginURL) {
-			defaultPluginURLs[_normalizeURL(require.toUrl(pluginURL))] = true;
-		});
-	}
-
 	/**
 	 * PluginListRenderer
 	 */
@@ -198,6 +187,8 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 		},
 	
 		render: function(referenceplugin){
+			
+			var pluginRegistry = this.settings.pluginRegistry;
 		
 			// Declare row-level commands so they will be rendered when the rows are added.
 			var reloadPluginCommand = new mCommands.Command({
@@ -221,7 +212,7 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 				imageClass: "core-sprite-delete", //$NON-NLS-0$
 				id: "orion.uninstallPlugin", //$NON-NLS-0$
 				visibleWhen: function(url) {  // we expect a URL
-					return !defaultPluginURLs[url]; //$NON-NLS-0$
+					return !pluginRegistry.getPlugin(url).isDefaultPlugin; //$NON-NLS-0$
 				},
 				callback: function(data) {
 					this.removePlugin(data.items);
@@ -231,17 +222,16 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 			this.commandService.registerCommandContribution("pluginCommand", "orion.uninstallPlugin", 2); //$NON-NLS-1$ //$NON-NLS-0$
 
 
-			var pluginRegistry = this.settings.pluginRegistry;
 			var disablePluginCommand = new mCommands.Command({
 				name: messages["Disable"],
 				tooltip: messages["DisableTooltip"],
 				id: "orion.disablePlugin", //$NON-NLS-0$
 				imageClass: "core-sprite-stop", //$NON-NLS-0$
 				visibleWhen: function(url) {  // we expect a URL
-					if (defaultPluginURLs[url]) {
+					var plugin = pluginRegistry.getPlugin(url);
+					if (plugin.isDefaultPlugin) {
 						return false;
 					}
-					var plugin = pluginRegistry.getPlugin(url);
 					return plugin._getAutostart() !== "stopped"; //$NON-NLS-0$
 				},
 				callback: function(data) {
@@ -258,10 +248,10 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 				id: "orion.enablePlugin", //$NON-NLS-0$
 				imageClass: "core-sprite-start", //$NON-NLS-0$
 				visibleWhen: function(url) {  // we expect a URL
-					if (defaultPluginURLs[url]) {
+					var plugin = pluginRegistry.getPlugin(url);
+					if (plugin.isDefaultPlugin) {
 						return false;
 					}
-					var plugin = pluginRegistry.getPlugin(url);
 					return plugin._getAutostart() === "stopped"; //$NON-NLS-0$
 				},
 				callback: function(data) {
@@ -279,12 +269,13 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 
 			// mamacdon: re-rendering the list starts here
 //			lib.empty( list );
-			var plugins = this.settings.pluginRegistry.getPlugins();
+			var plugins = pluginRegistry.getPlugins();
 			this.pluginTitle.textContent = messages['Plugins'];
 			this.pluginCount.textContent = plugins.length;
 			
+			//Temporary code
 			for (var i=0; i<plugins.length; i++) {
-				if (defaultPluginURLs[plugins[i].getLocation()]) {
+				if (plugins[i]._default) {
 					plugins[i].isDefaultPlugin = true;
 				}
 			}			
@@ -364,11 +355,11 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 		
 		addPlugin: function( pluginUrl ){
 			this.statusService.setMessage(i18nUtil.formatMessage(messages["Installed"], pluginUrl), 5000, true);
-			this.settings.preferences.getPreferences("/plugins").then(function(plugins) { //$NON-NLS-0$
-				plugins.put(pluginUrl, true);
-			}); // this will force a sync
-			
-			this.render();
+			var data = {};
+			data[pluginUrl] = true;
+			this.settings.preferences.put("/plugins", data).then(function() { //$NON-NLS-0$
+				this.render();
+			}.bind(this)); // this will force a sync
 		},
 		
 		getPluginsLink: function( data ){		
@@ -402,8 +393,14 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 		reloadPlugin: function(url) {
 			var plugin = this.settings.pluginRegistry.getPlugin(url);
 			if (plugin) {
-				plugin.update().then(this.render.bind(this));
-				this.statusService.setMessage( i18nUtil.formatMessage(messages["Reloaded"], url), 5000, true);
+				var deferred = new Deferred();
+				this.progressService.progress(deferred, messages.ReloadingPlugin);
+				deferred.progress({type: "progress"});
+				plugin.update().then(function() {
+					this.render();
+					this.statusService.setMessage( i18nUtil.formatMessage(messages["Reloaded"], url), 5000, true);
+					deferred.resolve();
+				}.bind(this), deferred.reject, deferred.progress);
 			}
 		},
 		
@@ -412,8 +409,9 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 			if (plugin) {
 				plugin.stop();
 				this.statusService.setMessage(i18nUtil.formatMessage(messages["Disabled"], url), 5000, true);
-				this.settings.preferences.getPreferences("/plugins").then(function(plugins) { //$NON-NLS-0$
-					plugins.put(url, false);
+				var data = {};
+				data[url] = false;
+				this.settings.preferences.put("/plugins", data).then(function() { //$NON-NLS-0$
 					this.render(this);
 				}.bind(this)); // this will force a sync
 				this.render();
@@ -423,10 +421,12 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 		enablePlugin: function(url){
 			var plugin = this.settings.pluginRegistry.getPlugin(url);
 			if (plugin) {
-				plugin.start({lazy:true});
+				/* Start the plug-in as non-lazy in case it has a settings category to contribute */
+				plugin.start({lazy: false});
 				this.statusService.setMessage(i18nUtil.formatMessage(messages["Enabled"], url), 5000, true);
-				this.settings.preferences.getPreferences("/plugins").then(function(plugins) { //$NON-NLS-0$
-					plugins.put(url, false);
+				var data = {};
+				data[url] = true;
+				this.settings.preferences.put("/plugins", data).then(function() { //$NON-NLS-0$
 					this.render(this);
 				}.bind(this)); // this will force a sync
 				this.render();
@@ -440,12 +440,18 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 		/* reloads all of the plugins - sometimes useful for reaffirming plugin initialization */
 
 		reloadPlugins: function(){
+			var deferred = new Deferred();
+			this.progressService.progress(deferred, messages.ReloadingAllPlugins);
+			deferred.progress({type: "progress"});
 			var plugins = this.settings.pluginRegistry.getPlugins();
 			var updates = [];
 			plugins.forEach(function(plugin){
 				updates.push(plugin.update());
 			});
-			Deferred.all(updates, function(){}).then(this.reloaded.bind(this));
+			Deferred.all(updates, function(){}).then(function() {
+				this.reloaded();
+				deferred.resolve();
+			}.bind(this), deferred.reject, deferred.progress);
 		},
 		
 		forceRemove: function(url){
@@ -453,13 +459,13 @@ define(['i18n!orion/settings/nls/messages', 'orion/i18nUtil', 'require', 'orion/
 			if (plugin) {
 				plugin.uninstall().then(function() {
 					this.statusService.setMessage(i18nUtil.formatMessage(messages["Uninstalled"], url), 5000, true);
-					this.settings.preferences.getPreferences("/plugins").then(function(plugins) { //$NON-NLS-0$
-						plugins.keys().some(function(key) {
+					this.settings.preferences.get("/plugins").then(function(plugins) { //$NON-NLS-0$
+						Object.keys(plugins).some(function(key) {
 							if (_normalizeURL(require.toUrl(key)) === _normalizeURL(url)) {
-								plugins.remove(key);
+								this.settings.preferences.remove("/plugins", key); //$NON-NLS-1$
 								return true;
 							}
-						});
+						}.bind(this));
 					}.bind(this)); // this will force a sync
 					this.render();
 				}.bind(this));

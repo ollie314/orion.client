@@ -9,8 +9,15 @@
  * Contributors: IBM Corporation - initial API and implementation
  ******************************************************************************/
 /*eslint-env browser, amd*/
-define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments', 'orion/objects', 	'orion/selection'], function(EventTarget, lib, mHTMLFragments, objects, Selection){
-	
+define([
+	'orion/EventTarget', 
+	'orion/webui/littlelib', 
+	'orion/commonHTMLFragments', 
+	'orion/objects', 	
+	'orion/selection',
+	'orion/webui/tooltip',
+	'orion/bidiUtils'
+], function(EventTarget, lib, mHTMLFragments, objects, Selection, sTooltip, bidiUtils){
 	/**
 	 * Generates a section
 	 * 
@@ -71,7 +78,15 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 			this.domNode.classList.add(wrapperClasses[i]);
 		}
 		this.domNode.id = options.id;
-
+		
+		if(options.tooltip) {
+			this.domNode.optionsTooltip = new sTooltip.Tooltip({
+				node: this.domNode,
+				text: options.tooltip,
+				position: ["above", "below", "right", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+			});
+		}
+		
 		// if canHide, add twistie and stuff...
 		this.canHide = options.canHide;
 		if(options.canHide){
@@ -205,9 +220,14 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 
 		this._contentParent = document.createElement("div"); //$NON-NLS-0$
 		this._contentParent.id = this.id + "Content"; //$NON-NLS-0$
-		this._contentParent.role = "region"; //$NON-NLS-0$
+		this._contentParent.setAttribute("role", "region"); //$NON-NLS-2$ //$NON-NLS-1$
 		this._contentParent.classList.add("sectionTable"); //$NON-NLS-0$
 		this._contentParent.setAttribute("aria-labelledby", this.titleNode.id); //$NON-NLS-0$
+		if (options.dropdown) {
+			this._contentParent.classList.add("sectionDropdown");
+		}
+		// initially style as hidden until we determine what needs to happen
+		this._collapse();
 		if (options.sibling) {
 			parent.insertBefore(this._contentParent, options.sibling);
 		} else {
@@ -222,14 +242,12 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 			this._onExpandCollapse = options.onExpandCollapse;
 		}
 		this._preferenceService = options.preferenceService;
-		// initially style as hidden until we determine what needs to happen
-		this._collapse();
 		if (!options.dropdown) {
 			// should we consult a preference?
 			if (this._preferenceService) {
 				var self = this;
-				this._preferenceService.getPreferences("/window/views").then(function(prefs) {  //$NON-NLS-0$
-					var isExpanded = prefs.get(self.id);
+				this._preferenceService.get("/window/views").then(function(prefs) {  //$NON-NLS-0$
+					var isExpanded = prefs[self.id];
 					
 					if (isExpanded === undefined){
 						// pref not found, check options
@@ -299,7 +317,7 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 		 * Get the header DOM node
 		 * @returns {DomNode} The dom node that holds the section header.
 		 */
-		getHeaderElement: function(title){
+		getHeaderElement: function(){
 			return this.domNode;
 		},
 		
@@ -307,7 +325,7 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 		 * Get the title DOM node
 		 * @returns {DomNode} The dom node that holds the section title.
 		 */
-		getTitleElement: function(title){
+		getTitleElement: function(){
 			return this.titleNode;
 		},
 		
@@ -315,7 +333,7 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 		 * Get the title DOM node
 		 * @returns {DomNode} The dom node that holds the section title.
 		 */
-		getActionElement: function(title){
+		getActionElement: function(){
 			return this._toolActionsNode;
 		},
 		
@@ -442,7 +460,11 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 						getCellHeaderElement: function(col_no){
 							var firstHeader = Object.getPrototypeOf(this).getCellHeaderElement.call(this, col_no);
 							if(firstHeader){
-								this.section.setTitle(firstHeader.innerHTML);
+								var sectionTitle = firstHeader.innerHTML;
+								if (bidiUtils.isBidiEnabled()) {
+									sectionTitle = bidiUtils.enforceTextDirWithUcc(sectionTitle);
+								}
+								this.section.setTitle(sectionTitle);
 							}
 							return null;
 						}
@@ -488,6 +510,8 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 		_changeExpandedState: function() {
 			if (this.hidden){
 				this._expand();
+				var nextTabbable = lib.firstTabbable(this.domNode.nextElementSibling);
+				if (nextTabbable && nextTabbable.tagName === "INPUT") nextTabbable.focus(); //$NON-NLS-0$
 			} else {
 				this._collapse();
 			}
@@ -508,9 +532,9 @@ define(['orion/EventTarget', 'orion/webui/littlelib', 'orion/commonHTMLFragments
 			}
 			// if a preference service was specified, we remember the state.
 			if (this._preferenceService && storeValue) {
-				this._preferenceService.getPreferences("/window/views").then(function(prefs){ //$NON-NLS-0$
-					prefs.put(id, isExpanded);
-				}); 
+				var data = {};
+				data[id] = isExpanded;
+				this._preferenceService.put("/window/views", data); //$NON-NLS-1$
 			}
 			
 			// notify the client

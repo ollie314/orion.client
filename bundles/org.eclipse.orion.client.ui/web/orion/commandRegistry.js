@@ -12,15 +12,20 @@
  
 define([
 	'orion/commands',
+	'orion/keyBinding',
 	'orion/explorers/navigationUtils',
+	'orion/i18nUtil',
+	'orion/bidiUtils',
 	'orion/PageUtil',
 	'orion/uiUtils',
 	'orion/webui/littlelib',
 	'orion/webui/dropdown',
 	'orion/webui/tooltip',
 	'text!orion/webui/submenutriggerbutton.html',
-	'orion/metrics'
-], function(Commands, mNavUtils, PageUtil, UIUtil, lib, mDropdown, mTooltip, SubMenuButtonFragment, mMetrics) {
+	'orion/metrics',
+	'orion/Deferred',
+	'orion/EventTarget'
+], function(Commands, mKeyBinding, mNavUtils, i18nUtil, bidiUtils, PageUtil, UIUtil, lib, mDropdown, mTooltip, SubMenuButtonFragment, mMetrics, mDeferred, mEventTarget) {
 
 	/**
 	 * Constructs a new command registry with the given options.
@@ -35,14 +40,46 @@ define([
 		this._activeBindings = {};
 		this._urlBindings = {};
 		this._pendingBindings = {}; // bindings for as-yet-unknown commands
-		this._init(options);
 		this._parameterCollector = null;
+		this._init(options || {});
 	}
 	CommandRegistry.prototype = /** @lends orion.commandregistry.CommandRegistry.prototype */ {
 		_init: function(options) {
 			this._selectionService = options.selection;
 			var self = this;
 			Commands.setKeyBindingProvider(function() { return self._activeBindings; });
+
+			// Make the CommandRegistry an EventTarget. This is somewhat different from the normal pattern
+			// so that we can override the normal 'addEventTarget' processing (see below)
+			mEventTarget.attach(CommandRegistry.prototype);
+
+			// Add a listener so our bindings get updated immediately
+			this.addEventListener("bindingChanged", function(info) {
+				this._handleBindingChanges(info);
+			}.bind(this));
+
+		
+			/**
+			 * @name addEventListener
+			 * 
+			 * @description This is an override of the normal addEventListener to allow it to
+			 * keep listeners synch'd with the current binding overrides whether or not they get added before or
+			 * after the actual binding overrides have been retrieved from the preference store.
+			 * 
+			 * Once the overrides preference is loaded any currently registered listeners are informed of the current
+			 * binding overrides. Subsequent listeners are also informed when they get added.
+			 * @param eventType The type of event being listened on.
+			 * @param listener The listener to call when the event is dispatched.
+			 */
+			this.addEventListener = function(eventType, listener) {
+				// if we've already received the overrides from the preference store then broadcast them to the new listener
+				if (this._bindingOverrides && eventType === "bindingChanged") {
+					this._updateBindingOverrides(listener);
+				}
+				
+				// hook the listener for future changes
+				CommandRegistry.prototype.addEventListener.call(this, eventType, listener);
+			}
 		},
 		
 		/**
@@ -204,7 +241,24 @@ define([
 		 * will be called with boolean indicating whether the command was confirmed.
 		 */
 		confirm: function(node, message, yesString, noString, modal, onConfirm) {
-			var result = false;
+			this._popupDialog(true, node, message, yesString, noString, modal, onConfirm);
+		},
+		
+		/**
+		 * Open a parameter collector to confirm a command or collect user input.
+		 *
+		 * @param {Boolean} isConfirm that determinds the popup dialog's type.
+		 * @param {DOMElement} node the dom node that is displaying the command
+		 * @param {String} message the message to show when confirming the command
+		 * @param {String} yesString the label to show on a yes/true choice
+		 * @param {String} noString the label to show on a no/false choice
+		 * @param {Boolean} modal indicates whether the confirmation prompt should be modal.
+		 * @param {Function} onConfirm a function that will be called when the user confirms the command.  The function
+		 * @param {String} default message in the input box.
+		 * will be called with boolean indicating whether the command was confirmed.
+		 */
+		_popupDialog: function(isConfirm, node, message, yesString, noString, modal, onConfirm, defaultInput) {
+			var result = isConfirm ? false : "";
 			if (this._parameterCollector && !modal) {
 				var self = this;
 				var okCallback = function() {onConfirm(result);};
@@ -213,11 +267,17 @@ define([
 					var label = document.createElement("span"); //$NON-NLS-0$
 					label.classList.add("parameterPrompt"); //$NON-NLS-0$
 					label.textContent = message;
-					
 					parent.appendChild(label);
+					if(!isConfirm){
+						var input = document.createElement("input");
+						input.setAttribute("value", defaultInput);
+						input.classList.add("parameterInput");
+						bidiUtils.initInputField(input);
+						parent.appendChild(input);
+					}
 					var yesButton = document.createElement("button"); //$NON-NLS-0$
 					yesButton.addEventListener("click", function(event) { //$NON-NLS-0$
-						result = true;
+						result = isConfirm ? true : input.value;
 						okCallback();
 						closeFunction();
 					}, false);
@@ -226,7 +286,7 @@ define([
 					yesButton.className = "dismissButton"; //$NON-NLS-0$
 					var button = document.createElement("button"); //$NON-NLS-0$
 					button.addEventListener("click", function(event) { //$NON-NLS-0$
-						result = false;
+						result = isConfirm ? false : "";
 						closeFunction();
 					}, false);
 					buttonParent.appendChild(button);
@@ -235,7 +295,10 @@ define([
 					return yesButton;
 				};
 				this._parameterCollector.close();
-				var opened = this._parameterCollector.open(node, fillFunction, function(){});
+				if(isConfirm || !isConfirm && !node ){
+					// Do this if this is a confirm or if this is a prompt but without node specified.
+					var opened = this._parameterCollector.open(node, fillFunction, function(){});
+				}
 				if (!opened) {
 					var tooltip = new mTooltip.Tooltip({
 						node: node,
@@ -243,7 +306,7 @@ define([
 							this.destroy();
 						},
 						trigger: "click", //$NON-NLS-0$
-						position: ["below", "right", "above", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+						position: isConfirm ? ["below", "right", "above", "left"] : ["right","above", "below", "left"]//$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$
 					});
 					var parameterArea = tooltip.contentContainer();
 					parameterArea.classList.add("parameterPopup"); //$NON-NLS-0$
@@ -278,6 +341,22 @@ define([
 			} 
 			result = window.confirm(message);
 			onConfirm(result);
+		},
+		
+		/**
+		 * Open a tolltip parameter collector to collect user input.
+		 *
+		 * @param {DOMElement} node the dom node that is displaying the command
+		 * @param {String} message the message to show when confirming the command
+		 * @param {String} yesString the label to show on a yes/true choice
+		 * @param {String} noString the label to show on a no/false choice
+		 * @param {String} default message in the input box.
+		 * @param {Boolean} modal indicates whether the confirmation prompt should be modal.
+		 * @param {Function} onConfirm a function that will be called when the user confirms the command.  The function
+		 * will be called with boolean indicating whether the command was confirmed.
+		 */
+		prompt: function(node, message, yesString, noString, defaultInput, modal, onConfirm) {
+			this._popupDialog(false, node, message, yesString, noString, modal, onConfirm ,defaultInput);
 		},
 		
 		/**
@@ -333,9 +412,10 @@ define([
 								node: commandInvocation.domNode || commandInvocation.domParent,
 								afterHiding: function() {
 									this.destroy();
+									if (commandInvocation.domParent) commandInvocation.domParent.classList.remove("parameterPopupOpen"); //$NON-NLS-1$
 								},
 								trigger: "click", //$NON-NLS-0$
-								position: ["below", "right", "above", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+								position: ["below", "right", "above", "left"] //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$
 							});
 							var parameterArea = tooltip.contentContainer();
 							parameterArea.classList.add("parameterPopup"); //$NON-NLS-0$
@@ -345,8 +425,10 @@ define([
 									originalFocusNode.focus();
 								}
 								tooltip.destroy();
+								if (commandInvocation.domParent) commandInvocation.domParent.classList.remove("parameterPopupOpen"); //$NON-NLS-0$
 							}, cancelCallback)(parameterArea);
 							tooltip.show();
+							if (commandInvocation.domParent) commandInvocation.domParent.classList.add("parameterPopupOpen"); //$NON-NLS-0$
 							if (focusNode) {
 								window.setTimeout(function() {
 										focusNode.focus();
@@ -359,12 +441,12 @@ define([
 						}
 					}
 					if (!collecting) {
-						mMetrics.logEvent("command", "invoke", commandInvocation.command.id); //$NON-NLS-1$ //$NON-NLS-0$
+						mMetrics.logEvent("command", "invoke", commandInvocation.command.id); //$NON-NLS-2$ //$NON-NLS-1$
 						// Just call the callback with the information we had.
 						return commandInvocation.command.callback.call(commandInvocation.handler || window, commandInvocation);
 					}
 				} else {
-					mMetrics.logEvent("command", "invoke", commandInvocation.command.id); //$NON-NLS-1$ //$NON-NLS-0$
+					mMetrics.logEvent("command", "invoke", commandInvocation.command.id); //$NON-NLS-2$ //$NON-NLS-1$
 					// We should not be trying to collect parameters, just call the callback.
 					return commandInvocation.command.callback.call(commandInvocation.handler || window, commandInvocation);
 				}
@@ -395,13 +477,14 @@ define([
 		 */
 		showKeyBindings: function(keyAssist) {
 			var scopes = {};
-			var bindingString, binding;
+			var binding;
 			// see commands.js _processKey
 			function execute(activeBinding) {
 				return function() {
 					Commands.executeBinding(activeBinding);
 				};
 			}
+			
 			var bindings = [];
 			for (var aBinding in this._activeBindings) {
 				binding = this._activeBindings[aBinding];
@@ -423,19 +506,146 @@ define([
 					}
 					scopes[binding.keyBinding.scopeName].push(binding);
 				} else {
-					bindingString = UIUtil.getUserKeyString(binding.keyBinding);
-					keyAssist.createItem(bindingString, binding.command.name || binding.command.tooltip, execute(binding));
+					keyAssist.createItem(binding.keyBinding, binding.command.name || binding.command.tooltip, binding.command.id, execute(binding));
 				}
 			}
 			for (var scopedBinding in scopes) {
 				if (scopes[scopedBinding].length && scopes[scopedBinding].length > 0) {
 					keyAssist.createHeader(scopedBinding);
 					scopes[scopedBinding].forEach(function(binding) {
-						bindingString = UIUtil.getUserKeyString(binding.keyBinding);
-						keyAssist.createItem(bindingString, binding.command.name || binding.command.tooltip, execute(binding));
+						keyAssist.createItem(binding.keyBinding, binding.command.name || binding.command.tooltip, binding.command.id, execute(binding));
 					});
 				}	
 			}
+		},
+		
+		_handleBindingChanges: function(args) {
+			// Change the command's current binding
+			var command = this.findCommand(args.id);
+			if (command) {
+				// Add the new binding (overrides any existing one)
+				var curBinding = this._activeBindings[args.id];
+				if (curBinding) {
+					curBinding.keyBinding = args.newBinding;
+				} else {
+					this._addBinding(command, "key", args.newBinding); //$NON-NLS-1$
+				}
+			}
+			
+			// Now see if we have any menu items to update
+			if (this._renderedCommands && this._renderedCommands[args.id]) {
+				var scopes = this._renderedCommands[args.id];
+				var keys = Object.keys(scopes);
+				for (var i=0; i<keys.length; i++) {
+					var invocation = scopes[keys[i]];
+					var bindingString = UIUtil.getUserKeyString(args.newBinding);
+					var newElement = Commands.createCommandMenuItem(invocation.domParent, invocation.command, invocation, null, invocation.onClick, bindingString);
+					invocation.domNode.parentNode.replaceChild(newElement, invocation.domNode);
+					invocation.domNode = newElement;
+				}
+			}
+		},
+		
+		/**
+		 * @name createBindingOverride
+		 * @description Creates an override for the binding of a particular Command or Text Action.
+		 * @param id The id of the Command or Text Action being overridden
+		 * @param newBinding The new binding to use
+		 * @param prevBinding The binding (if any) being overridden. Note that this is needed to ensure that
+		 * we override the correct Text Action (which can have multiple bindings for the same id).
+		 */
+		createBindingOverride: function(id, newBinding, prevBinding) {
+			if (!this._bindingOverrides) {
+				this._bindingOverrides = [];
+			}
+
+			// Capture this change			
+			this._bindingOverrides.push ({id: id, newBinding: newBinding, prevBinding: prevBinding});
+
+			// Update the preference store
+			if (this._prefService) {
+				var overridesStr = JSON.stringify(this._bindingOverrides);
+				this._prefService.put("/KeyBindings", {overridesJSON: overridesStr}); //$NON-NLS-1$
+			}
+			
+			// Handle the change locally
+			var bindingChangeEvent = {type: "bindingChanged", id: id, newBinding: newBinding, prevBinding: prevBinding}; //$NON-NLS-1$
+			this.dispatchEvent(bindingChangeEvent);
+		},
+
+		/**
+		 * @name _registerRenderedCommand
+		 * @description Keeps a record of the 'invocation' object for a rendered command. The invocation contains
+		 * a lot of information about the rendered item (including the DOM element created to show it). This is currently
+		 * used to update the menu item's key binding info if its binding changes.
+		 * 
+		 * @param actionID The actionID of the menu item
+		 * @param scopeID The scopeID of this particular invocation (two different menus can be created using the same commands)
+		 * @param invocation The invocation record to store
+		 */
+		_registerRenderedCommand: function(actionID, scopeID, invocation) {
+			if (!this._renderedCommands) {
+				this._renderedCommands = {};
+			}
+			var scopes = this._renderedCommands[actionID];
+			if (!scopes) {
+				scopes = this._renderedCommands[actionID] = {};
+			}
+			scopes[scopeID] = invocation;
+		},
+		
+		_getBindingOverrides: function() {
+			// Get the key binding overrides from the preference store
+			return this._prefService.get("/KeyBindings").then(function(bindingPrefs) { //$NON-NLS-1$
+				var overrides = [];
+				
+				var prefVal = bindingPrefs["overridesJSON"]; //$NON-NLS-1$
+				if (prefVal) {
+					// Sometimes we get the parsing done for us, sometimes not...wtf?
+					if (typeof prefVal === "string") {
+						overrides = JSON.parse(prefVal);
+					} else {
+						overrides = prefVal;
+					}
+				}
+				
+				// Turn the Objects back into KeyStrokes
+				for (var i = 0; i < overrides.length; i++) {
+					var bindingChange = overrides[i];
+					if (bindingChange.newBinding) {
+						var nb = bindingChange.newBinding;
+						overrides[i].newBinding = new mKeyBinding.KeyStroke(nb.keyCode, nb.mod1, nb.mod2, nb.mod3, nb.mod4, nb.type);
+					}
+					if (bindingChange.prevBinding) {
+						var pb = bindingChange.prevBinding;
+						overrides[i].prevBinding = new mKeyBinding.KeyStroke(pb.keyCode, pb.mod1, pb.mod2, pb.mod3, pb.mod4, pb.type);
+					}
+				}
+				
+				return new mDeferred().resolve(overrides);
+			}.bind(this));
+		},
+		
+		/**
+		 * @name getBindingOverride
+		 * @description returns the binding that the given id should be overridden with (or null if no override exists). Note that
+		 * this method is only valid for Commands, not Text Actions,
+		 * @param cmdId The id of the Command to check
+		 * @returns returns the new KeyStroke if there's an override else null
+		 */
+		getBindingOverride: function(cmdId) {
+			// If we haven't recieved the overrides yet
+			if (!this._bindingOverrides)
+				return null;
+			
+			// Here we want the *last* override so we iterate backwards
+			for (var i = (this._bindingOverrides.length - 1); i >= 0; i--) {
+				var override = this._bindingOverrides[i];
+				if (override.id === cmdId) {
+					return override.newBinding;
+				}
+			}
+			return null;
 		},
 		
 		/** 
@@ -476,8 +686,8 @@ define([
 		 * the <code>title</code> will be used as the tooltip.
 		 * @param {String} [selectionClass] CSS class to be appended when the command button is selected. Optional.
 		 * @param {String} or {boolean} [defaultActionId] Id of an action from this group that should be invoked when the group is selected. This will add an
-		 * arrow to the grup that will open the dropdown. Optionally this can be set to <code>true</code> instead of adding a particular action.
-		 * If set to <code>true</code> the group will be renderer as if there was a default action, but instead of invoking the default action it will
+		 * arrow to the group that will open the dropdown. Optionally this can be set to <code>true</code> instead of adding a particular action.
+		 * If set to <code>true</code> the group will be rendered as if there was a default action, but instead of invoking the default action it will
 		 * open the dropdown. Optional.
 		 * @param {String} [extraClasses] A string containing space separated css classes that will be applied to group button
 		 */	
@@ -567,6 +777,57 @@ define([
 		},
 		
 		/**
+		 * Register the serviceRegistry. Use this gain access to any other services we need (i.e. the preferenceService)
+		 * @param serviceRegistry {orion.serviceregistry.ServiceRegistry} the current service registry.
+		 */
+		setServiceRegistry: function(serviceRegistry) {
+			this._serviceRegistry = serviceRegistry;
+			this._prefService = serviceRegistry.getService("orion.core.preference"); //$NON-NLS-1$
+
+			if (this._prefService) {
+				// Get the overrides from the preference store
+				this._getBindingOverrides().then(function(overrides) {
+					this._bindingOverrides = overrides;
+					
+					// Update all folks that are listening
+					this._updateBindingOverrides();
+				}.bind(this));
+	
+				// listen for changes from other pages
+				this._prefService.addEventListener("changed", function (e) {
+					if (e.namespace === "/KeyBindings") { //$NON-NLS-1$
+						// Refresh the binding overrides
+						this._getBindingOverrides().then(function(overrides) {
+							if (overrides.length > this._bindingOverrides.length) {
+								// handle any new changes
+								for (var i = this._bindingOverrides.length; i < overrides.length; i++) {
+									var override = overrides[i];
+									var bindingChangeEvent = {type: "bindingChanged", id: override.id, newBinding: override.newBinding,  //$NON-NLS-1$
+																prevBinding: override.prevBinding};
+									this.dispatchEvent(bindingChangeEvent);
+								}
+							}
+							this._bindingOverrides = overrides;
+						}.bind(this));
+					}
+				}.bind(this));
+			}
+		},
+
+		_updateBindingOverrides: function(listener) {
+			for(var i = 0; i < this._bindingOverrides.length; i++) {
+				var override = this._bindingOverrides[i];
+				var bindingChangeEvent = {type: "bindingChanged", id: override.id, newBinding: override.newBinding,  //$NON-NLS-1$
+					prevBinding: override.prevBinding};
+				if (listener) {
+					listener(bindingChangeEvent);
+				} else {
+					this.dispatchEvent(bindingChangeEvent);
+				}
+			}
+		},
+		
+		/**
 		 * Register a command contribution, which identifies how a command appears
 		 * on a page and how it is invoked.
 		 * @param {String} scopeId The id describing the scope of the command.  Required.
@@ -594,6 +855,12 @@ define([
 			parentTable[commandId] = {position: position, handler: handler};
 			
 			var command;
+			if (this._bindingOverrides) {
+				var bindingOverride = this.getBindingOverride(commandId, keyBinding);
+				if (bindingOverride) {
+					keyBinding = bindingOverride;
+				}
+			}
 			// add to the bindings table now
 			if (keyBinding) {
 				command = this._commandList[commandId];
@@ -649,7 +916,7 @@ define([
 		 */
 		_addBinding: function(command, type, binding, bindingOnly) {
 			if (!command.id) {
-				throw new Error("No command id: " + command);
+				throw new Error("No command id: " + command); //$NON-NLS-1$
 			}
 			if (type === "key") { //$NON-NLS-0$
 				this._activeBindings[command.id] = {command: command, keyBinding: binding, bindingOnly: bindingOnly};
@@ -740,7 +1007,8 @@ define([
 				return;
 			} 
 			if (contributions) {
-				this._render(contributions, parent, items, handler, renderType || "button", userData, domNodeWrapperList); //$NON-NLS-0$
+				this._render(scopeId, contributions, parent, items, handler, renderType || "button", userData, domNodeWrapperList); //$NON-NLS-0$
+				
 				// If the last thing we rendered was a group, it's possible there is an unnecessary trailing separator.
 				this._checkForTrailingSeparator(parent, renderType, true);
 			}
@@ -771,7 +1039,7 @@ define([
 			}
 		},
 		
-		_render: function(contributions, parent, items, handler, renderType, userData, domNodeWrapperList, extraClasses) {
+		_render: function(scopeId, contributions, parent, items, handler, renderType, userData, domNodeWrapperList, extraClasses) {
 			// sort the items
 			var sortedByPosition = contributions.sortedContributions;
 			
@@ -838,7 +1106,7 @@ define([
 							// render the children asynchronously
 							if (created) {
 //								window.setTimeout(function() {
-									self._render(contribution.children, created.menu, items, handler, "menu", userData, domNodeWrapperList);  //$NON-NLS-0$
+									self._render(scopeId, contribution.children, created.menu, items, handler, "menu", userData, domNodeWrapperList);  //$NON-NLS-0$
 									// special post-processing when we've created a menu in an image bar.  We want to get rid 
 									// of a trailing separator in the menu first, and then decide if our menu is necessary
 									self._checkForTrailingSeparator(created.menu, "menu", true);  //$NON-NLS-0$
@@ -880,7 +1148,7 @@ define([
 							if (parent.childNodes.length > 0 && !self._checkForTrailingSeparator(parent, renderType)) {
 								sep = self.generateSeparatorImage(parent);
 							}
-							self._render(childContributions, parent, items, handler, renderType, userData, domNodeWrapperList); 
+							self._render(scopeId, childContributions, parent, items, handler, renderType, userData, domNodeWrapperList); 
 	
 							// make sure that more than just the separator got rendered before rendering a trailing separator
 							if (parent.childNodes.length > 0) {
@@ -895,7 +1163,7 @@ define([
 						if (contribution.title) {
 							var subMenu = self._createDropdownMenu(parent, contribution.title, true, null, null, contribution.imageClass);
 							if (subMenu) {
-								self._render(childContributions, subMenu.menu, items, handler, "menu", userData, domNodeWrapperList);  //$NON-NLS-0$
+								self._render(scopeId, childContributions, subMenu.menu, items, handler, "menu", userData, domNodeWrapperList);  //$NON-NLS-0$
 								// special post-processing when we've created a menu in an image bar.  We want to get rid 
 								// of a trailing separator in the menu first, and then decide if our menu is necessary
 								self._checkForTrailingSeparator(subMenu.menu, "menu", true);  //$NON-NLS-0$
@@ -911,7 +1179,7 @@ define([
 								self._generateMenuSeparator(parent);
 							}
 							// synchronously render the children since order matters
-							self._render(childContributions, parent, items, handler, renderType, userData, domNodeWrapperList); 
+							self._render(scopeId, childContributions, parent, items, handler, renderType, userData, domNodeWrapperList); 
 							// Add a trailing separator if children rendered.
 							if (parent.childNodes.length > 0) {
 								self._generateMenuSeparator(parent);
@@ -991,20 +1259,25 @@ define([
 							var onClick = function(event) {
 								self._invoke(invocation);
 							};
-							if (renderType === "menu") { //$NON-NLS-0$
+							if (renderType === "menu") {
 								var bindingString = null;
 								if (keyBinding && keyBinding.keyBinding) {
 									bindingString = UIUtil.getUserKeyString(keyBinding.keyBinding);
 								}
 								element = Commands.createCommandMenuItem(parent, command, invocation, null, onClick, bindingString);
-							} else if (renderType === "quickfix") { //$NON-NLS-0$
-								id = renderType + command.id + index; //$NON-NLS-0$ // using the index ensures unique ids within the DOM when a command repeats for each item
+								
+								// Register this command as being rendered (do we want to register all the commands ?)
+								invocation.onClick = onClick;  // cache the handler
+								self._registerRenderedCommand(command.id, scopeId, invocation);
+							} else if (renderType === "quickfix") {
+								id = renderType + command.id + index; // using the index ensures unique ids within the DOM when a command repeats for each item
 								var commandDiv = document.createElement("div"); //$NON-NLS-0$
 								parent.appendChild(commandDiv);
-								element = Commands.createCommandItem(commandDiv, command, invocation, id, null, renderType === "button", onClick); //$NON-NLS-0$
+								parent.classList.add('quickFixList');
+								element = Commands.createQuickfixItem(commandDiv, command, invocation, onClick, self._prefService);
 							} else {
-								id = renderType + command.id + index;  //$NON-NLS-0$ // using the index ensures unique ids within the DOM when a command repeats for each item
-								element = Commands.createCommandItem(parent, command, invocation, id, null, renderType === "tool", onClick); //$NON-NLS-0$
+								id = renderType + command.id + index;  // // using the index ensures unique ids within the DOM when a command repeats for each item
+								element = Commands.createCommandItem(parent, command, invocation, id, null, renderType === "tool", onClick);
 							} 
 							mNavUtils.generateNavGrid(domNodeWrapperList, element);
 							invocation.domNode = element;
@@ -1080,7 +1353,7 @@ define([
 				var tooltipText, hasDefault = defaultInvocation && defaultInvocation.command && (defaultInvocation.command.tooltip || defaultInvocation.command.name);
 				if (hasDefault) {
 					tooltipText = defaultInvocation.command.tooltip || defaultInvocation.command.name;
-				} else if (hasDefault) {
+				} else {
 					tooltipText = tooltip;
 				}
 				if (tooltipText) {
@@ -1170,7 +1443,7 @@ define([
 	 * @param {String} name the name of the event
 	 * @param {Function} handler the event handler function. The handler is provided two parameters on invocation, i. e.
 	 * 			the DOM event and the undergoing commandInvocation objects.
-	 * @param {Boolean} [capture] the (optional) flag used to determine whether to caputre the event or not
+	 * @param {Boolean} [capture] the (optional) flag used to determine whether to capture the event or not
 	 */
 	function CommandEventListener (event, handler, capture) {
 		this.event = event;
@@ -1221,7 +1494,7 @@ define([
 	 * A ParametersDescription defines the parameters required by a command, and whether there are additional
 	 * optional parameters that can be specified.  The command registry will attempt to collect required parameters
 	 * before calling a command callback.  The command is expected to provide UI for optional parameter, when the user has
-	 * signalled a desire to provide optional information.
+	 * signaled a desire to provide optional information.
 	 *
 	 * @param {orion.commands.CommandParameter[]} parameters an array of CommandParameters that are required
 	 * @param {Object} options The parameters description options object.

@@ -10,7 +10,7 @@
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
 /*eslint-env browser, amd*/
-define(['i18n!orion/nls/messages', 'require', 'orion/regex', 'orion/URITemplate'], function(messages, require, mRegex, URITemplate) {
+define(['i18n!orion/nls/messages', 'orion/regex', 'orion/editor/textModel', 'orion/URITemplate'], function(messages, mRegex, mTextModel, URITemplate) {
 
 /**
  * @name orion.searchUtils.SearchParams
@@ -35,7 +35,8 @@ function _generateSearchHelperRegEx(inFileQuery, searchParams, fromStart){
 	if(fromStart){
 		prefix = "^"; //$NON-NLS-0$
 	}
-	var regexp = mRegex.parse("/" + prefix + inFileQuery.searchStr + "/"); //$NON-NLS-1$ //$NON-NLS-0$
+	var searchStr = searchParams.wholeWord ? "\\b" + inFileQuery.searchStr + "\\b" : inFileQuery.searchStr;
+	var regexp = mRegex.parse("/" + prefix + searchStr + "/"); //$NON-NLS-1$ //$NON-NLS-0$
 	if (regexp) {
 		var pattern = regexp.pattern;
 		var flags = regexp.flags;
@@ -96,7 +97,11 @@ searchUtils.generateSearchHelper = function(searchParams, fromStart) {
 		if(hasQMark){
 			searchStr = searchStr.split("?").join("."); //$NON-NLS-1$ //$NON-NLS-0$
 		}
-		if(!hasStar && !hasQMark && !searchParams.nameSearch){
+		if(searchParams.wholeWord){
+			//escape all meta characters in string literal search except for * and .(when * or ? present)
+			searchStr = hasStar || hasQMark ? searchStr.replace(/[-[\]{}()+,\\^$|#\s]/g, "\\$&") : searchStr.replace(/[-[\]{}()+.,\\^$|#\s]/g, "\\$&") ;
+		}
+		if(!hasStar && !hasQMark && !searchParams.nameSearch && !searchParams.wholeWord){
 			inFileQuery.searchStr = searchParams.caseSensitive ? searchStr.split("\\").join("") : searchStr.split("\\").join("").toLowerCase(); //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 			inFileQuery.wildCard = false;
 		} else {
@@ -171,6 +176,7 @@ searchUtils.generateFindURLBinding = function(searchParams, inFileQuery, lineNum
 		find: inFileQuery.searchStr,
 		regEx: inFileQuery.wildCard ? true : undefined,
 		caseSensitive: searchParams.caseSensitive ? true : undefined,
+		wholeWord: searchParams.wholeWord ? true : undefined,
 		replaceWith: typeof(replaceStr) === "string" ? replaceStr : undefined, //$NON-NLS-0$
 		atLine: typeof(lineNumber) === "number" ? lineNumber : undefined //$NON-NLS-0$
 	};
@@ -190,6 +196,9 @@ searchUtils.convertFindURLBinding = function(findParams) {
 	if(typeof findParams.caseSensitive === "string"){ //$NON-NLS-0$
 		findParams.caseSensitive = (findParams.caseSensitive.toLowerCase() === "true"); //$NON-NLS-0$
 	}
+	if(typeof findParams.wholeWord === "string"){ //$NON-NLS-0$
+		findParams.wholeWord = (findParams.wholeWord.toLowerCase() === "true"); //$NON-NLS-0$
+	}
 	if(typeof findParams.atLine === "string"){ //$NON-NLS-0$
 		findParams.atLine = parseInt(findParams.atLine, 10);
 	}
@@ -206,7 +215,7 @@ searchUtils.replaceStringLiteral = function(text, keyword, replacingStr){
 	return searchUtils.replaceRegEx(text,regexp, replacingStr);
 };
 
-searchUtils.searchOnelineLiteral =  function(inFileQuery, lineString, onlyOnce){
+searchUtils.searchOnelineLiteral =  function(inFileQuery, lineString, onlyOnce, textModel, lineIndex){
 	var i,startIndex = 0;
 	var found = false;
 	var result = [];
@@ -215,7 +224,12 @@ searchUtils.searchOnelineLiteral =  function(inFileQuery, lineString, onlyOnce){
 		if (i < 0) {
 			break;
 		} else {
-			result.push({startIndex: i, length: inFileQuery.searchStrLength});
+			if(textModel) {
+				var start = textModel.getLineStart(lineIndex) + i;
+				result.push({startIndex: i, length: inFileQuery.searchStrLength, start: start, end: start + inFileQuery.searchStrLength});
+			} else {
+				result.push({startIndex: i, length: inFileQuery.searchStrLength});
+			}
 			found = true;
 			if(onlyOnce){
 				break;
@@ -267,13 +281,18 @@ searchUtils.findRegExp =  function(text, pattern, flags, startIndex) {
 	};
 };
 
-searchUtils.searchOnelineRegEx =  function(inFileQuery, lineString, onlyOnce){
+searchUtils.searchOnelineRegEx =  function(inFileQuery, lineString, onlyOnce, textModel, lineIndex){
 	var startIndex = 0;
 	var found = false;
 	var result = [];
 	while(true){
 		var regExResult = searchUtils.findRegExp(lineString, inFileQuery.regExp.pattern, inFileQuery.regExp.flags, startIndex);
 		if(regExResult){
+			if(textModel) {
+				var start = textModel.getLineStart(lineIndex) + regExResult.startIndex;
+				regExResult.start = start;
+				regExResult.end = start + regExResult.length;
+			}
 			result.push(regExResult);
 			found = true;
 			if(onlyOnce){
@@ -405,15 +424,19 @@ searchUtils.splitFile = function(text) {
 		} else {
 			index = lf + 1;
 		}
-		splitLines.push(text.substring(start, index - offset));
+		splitLines.push(text.substring(start, index));
 		start = index;
 	}
 	return splitLines;
 };
 
-searchUtils.searchWithinFile = function( inFileQuery, fileModelNode, fileContentText, lineDelim, replacing, caseSensitive){
+searchUtils.searchWithinFile = function( inFileQuery, fileModelNode, fileContentText, replacing, caseSensitive, noContext, useTextModel){
+	var textModel;
+	if(noContext || useTextModel) {
+		textModel = new mTextModel.TextModel(fileContentText);
+	}
 	var fileContents = searchUtils.splitFile(fileContentText);
-	if(replacing){
+	if(replacing || noContext){
 		fileModelNode.contents = fileContents;
 	}
 	if(fileModelNode){
@@ -425,21 +448,25 @@ searchUtils.searchWithinFile = function( inFileQuery, fileModelNode, fileContent
 				var lineString = caseSensitive ? lineStringOrigin : lineStringOrigin.toLowerCase();
 				var result;
 				if(inFileQuery.wildCard){
-					result = searchUtils.searchOnelineRegEx(inFileQuery, lineString);
+					result = searchUtils.searchOnelineRegEx(inFileQuery, lineString, false, textModel, i);
 				} else {
-					result = searchUtils.searchOnelineLiteral(inFileQuery, lineString);
+					result = searchUtils.searchOnelineLiteral(inFileQuery, lineString, false, textModel, i);
 				}
 				if(result){
 					var detailNode, lineNumber = i+1;
 					if(!replacing){
-						detailNode = {parent: fileModelNode, context: searchUtils.generateMatchContext(2, fileContents, i), checked: fileModelNode.checked, 
-										  type: "detail", matches: result, lineNumber: lineNumber, name: lineStringOrigin, //$NON-NLS-0$ 
-										  location: fileModelNode.location + "-" + lineNumber}; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+						if(noContext) {
+							detailNode = {lineNumber: lineNumber, matches: result, name: lineStringOrigin};
+						} else {
+							detailNode = {parent: fileModelNode, context: searchUtils.generateMatchContext(2, fileContents, i), checked: fileModelNode.checked, 
+											  type: "detail", matches: result, lineNumber: lineNumber, name: lineStringOrigin, //$NON-NLS-0$ 
+											  location: fileModelNode.location}; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+						}
 						fileModelNode.children.push(detailNode);
 					} else {
 						for(var j = 0; j < result.length; j++){
 							var matchNumber = j+1;
-							detailNode = {parent: fileModelNode, checked: fileModelNode.checked, type: "detail", matches: result, lineNumber: lineNumber, matchNumber: matchNumber, name: lineStringOrigin, location: fileModelNode.location + "-" + lineNumber + "-" + matchNumber}; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+							detailNode = {parent: fileModelNode, checked: fileModelNode.checked, type: "detail", matches: result, lineNumber: lineNumber, matchNumber: matchNumber, name: lineStringOrigin, location: fileModelNode.location}; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 							fileModelNode.children.push(detailNode);
 						}
 					}

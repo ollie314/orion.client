@@ -73,7 +73,7 @@ button,
   padding-bottom: 1.0625rem;
   padding-left: 2rem;
   font-size: 1rem;
-  background-color: #fbaf43;
+  background-color: #FDD900;
   border-color: #007095;
   color: white;
   transition: all 320ms ease-out;
@@ -539,7 +539,7 @@ header .orion-auth-buttons .orion-link-button {
 }
 header .orion-auth-buttons .orion-link-button:hover {
   color: #ffffff;
-  background-color: #fbaf43;
+  background-color: #FDD900;
   transition: all 320ms ease-in;
 }
 header .orion-container {
@@ -642,6 +642,19 @@ header .orion-container {
 .contentSwitcher .mobileContent .contentImageText {
   margin-top: 8px;
 }
+.downloadsContainer {
+	display:flex;
+	flex-direction:column;
+	display: -webkit-flex;
+	display: -ms-flexbox;
+	display: flex;
+	-webkit-align-items: center;
+	-ms-flex-align: center;
+	align-items: center;
+	flex-direction: column;
+	-ms-flex-direction: column;
+	-webkit-flex-direction: column;
+}
 /* ------------------------------------------------------------------------------- */
 /* ---------------------------- Pre-footer  ----------------------- */
 .pre-footer {
@@ -720,7 +733,7 @@ header .orion-container {
 }
 .social .orion-social-button > a:hover {
   transition: all 320ms ease-out;
-  background-color: #fbaf43;
+  background-color: #FDD900;
   opacity: 0.9;
 }
 .social .orion-social-button > a > i {
@@ -732,7 +745,7 @@ header .orion-container {
   color: #555555;
 }
 .social .orion-social-button > a > i:hover {
-  color: #fbaf43;
+  color: #FDD900;
   background-color: #ffffff;
   transition: all 320ms ease-in;
 }

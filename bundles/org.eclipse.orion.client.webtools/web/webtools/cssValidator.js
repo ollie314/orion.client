@@ -1,20 +1,22 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2014, 2015 IBM Corporation and others.
- * All rights reserved. This program and the accompanying materials are made 
- * available under the terms of the Eclipse Public License v1.0 
- * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
- * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html). 
+ * Copyright (c) 2014, 2016 IBM Corporation and others.
+ * All rights reserved. This program and the accompanying materials are made
+ * available under the terms of the Eclipse Public License v1.0
+ * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
+ * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html).
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
 /*eslint-env amd*/
-define("webtools/cssValidator", [ //$NON-NLS-0$
-	'orion/objects', //$NON-NLS-0$
-	'javascript/compilationUnit',
-	'webtools/util'
-], function(Objects, CU, Util) {
+define("webtools/cssValidator", [
+	"orion/objects",
+	"webtools/compilationUnit",
+	"webtools/util",
+	"i18n!webtools/nls/problems",
+	"orion/i18nUtil"
+], function(Objects, CU, Util, Messages, i18nUtil) {
 
 	// TODO How to keep this list up to date with rules definitions, settings options and content assist
 	var config = {
@@ -98,7 +100,7 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 	 * @description Creates a new validator
 	 * @constructor
 	 * @public
-	 * @param {Object} cssResultManager The back result manager
+	 * @param {CssResultManager} cssResultManager The back result manager
 	 * @since 6.0
 	 */
 	function CssValidator(cssResultManager) {
@@ -117,34 +119,36 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 		 * @callback
 		 */
 		computeProblems: function(editorContext, context) {
-			var that = this;
 			return editorContext.getFileMetadata().then(function(meta) {
-			    if(meta && meta.contentType.id === 'text/html') {
+			    if(meta && meta.contentType.id === "text/html") {
+			    	// Only run the validator if we have line information because cssLint uses line num and column, not offsets
+			    	if (!editorContext.getLineAtOffset){
+			    		return null;
+			    	}
 			        return editorContext.getText().then(function(text) {
     			         var blocks = Util.findStyleBlocks(text, context.offset);
     			         if(blocks && blocks.length > 0) {
-    			             var cu = new CU(blocks, meta);
-    			             return that.cssResultManager.getResult(cu.getEditorContext(), config).then(function(results) {
+    			             var cu = new CU(blocks, meta, editorContext);
+    			             return this.cssResultManager.getResult(cu.getEditorContext(), config).then(function(results) {
                 			    if(results) {
-                			         return that._computeProblems(results);
+                			         return this._computeProblems(results);
                 			    }
                 			    return null;
-        			         });
+        			         }.bind(this));
     			         }
-			         });
-			    } else {
-    			    return that.cssResultManager.getResult(editorContext, config).then(function(results) {
-        			    if(results) {
-        			         return that._computeProblems(results);
-        			    }
-        			    return null;
-        			});
-    			}
-			});
+			         }.bind(this));
+			    }
+			    return this.cssResultManager.getResult(editorContext, config).then(function(results) {
+    			    if(results) {
+    			         return this._computeProblems(results);
+    			    }
+    			    return null;
+    			}.bind(this));
+			}.bind(this));
 		},
 		
 		/**
-		 * @description Create the problems 
+		 * @description Create the problems
 		 * @function
 		 * @private
 		 * @param {String} contents The file contents
@@ -154,17 +158,23 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 			    var messages = results.messages,
 			    problems = [];
 			for (var i=0; i < messages.length; i++) {
-				var message = messages[i];
-				var range = null;
+				var message = messages[i],
+					range = null,
+					id = this._getProblemId(message);
+				if(!id) {
+					continue;
+				}
 				if(message.token) {
 				    range = [message.token.range[0]+1, message.token.range[1]+1];
 				} else if (message.line) {
 					range = this._getProblemRange(message);
+				} else {
+					range = [0,0];
 				}
 				if(range) {
     				problems.push({
-						id: this._getProblemId(message),
-						description: message.message,
+						id: id,
+						description: this._getMessage(message),
 						line: message.line,
 						start: range[0],
 						end: range[1],
@@ -174,7 +184,28 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 			}
 			return {problems: problems};
 		},
-		
+		 /**
+ 		 * @name _getMessage
+ 		 * @description Get the message from the problem object. This fuction also checks for an
+ 		 * NLS'd version of the message using its problem id
+ 		 * @function
+ 		 * @private
+ 		 * @param {?} problem The problem object
+ 		 * @returns {string} The problem message to display to the user
+ 		 * @since 13.0
+ 		 */
+ 		_getMessage: function _getMessage(problem) {
+		 	var id = this._getProblemId(problem);
+		 	if(id) {
+		 		var key = problem.data && problem.data.nls ? problem.data.nls : id,
+		 			m = Messages[key];
+		 		if(m) {
+		 			return i18nUtil.formatMessage.call(null, m, problem.data || {});
+		 		}
+		 	}
+		 	return problem.message;
+		 },
+		 
 		/**
 		 * @description Computes the problem id to use in the framework from the cssLint message
 		 * @param {Object} message The original CSSLint problem message
@@ -186,6 +217,9 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 		        if(message.rule.id) {
 		            return message.rule.id;
 		        }
+		    }
+		    if(message.data && message.data.nls) {
+		    	return message.data.nls;
 		    }
 		    return null;
 		},
@@ -206,7 +240,7 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 		    return [message.col, end];
 		},
 		
-		_punc: '\n\t\r (){}[]:;,',  //$NON-NLS-0$
+		_punc: "\n\t\r (){}[]:;,",  //$NON-NLS-0$
 		
 		/**
 		 * @description Returns the token or word found at the given offset
@@ -321,7 +355,7 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 		},
 		
 		/**
-		 * @description Hook for the test suite to restore the rule settings after 
+		 * @description Hook for the test suite to restore the rule settings after
 		 * calling _enableOnly.  Does not support complex rules (csslint doesn't have any currently)
 		 * @function
 		 * @private
@@ -336,8 +370,8 @@ define("webtools/cssValidator", [ //$NON-NLS-0$
 	   
 	   /**
 	    * @description Hook for the parser test suite
-	    * @function 
-	    * @private 
+	    * @function
+	    * @private
 	    * @since 8.0
 	    */
 		_defaultRuleSet: function _defaultConfig() {

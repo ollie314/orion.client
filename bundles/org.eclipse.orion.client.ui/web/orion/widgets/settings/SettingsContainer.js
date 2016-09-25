@@ -15,7 +15,6 @@
 
 define([
 	'i18n!orion/settings/nls/messages',
-	'orion/Deferred',
 	'orion/globalCommands',
 	'orion/PageUtil',
 	'orion/webui/littlelib',
@@ -28,17 +27,19 @@ define([
 	'orion/widgets/themes/ThemeImporter',
 	'orion/widgets/settings/SplitSelectionLayout',
 	'orion/widgets/plugin/PluginList',
-	'orion/widgets/settings/UserSettings',
 	'orion/widgets/settings/GitSettings',
 	'orion/widgets/settings/EditorSettings',
 	'orion/widgets/settings/ThemeSettings',
+	'orion/widgets/settings/UserSettings',
+	'orion/widgets/settings/GlobalizationSettings',
+	'orion/widgets/settings/GeneralSettings',
 	'orion/editorPreferences',
-	'orion/metrics'
-], function(messages, Deferred, mGlobalCommands, PageUtil, lib, objects, URITemplate, 
-		ThemeBuilder, SettingsList, mThemePreferences, editorThemeData, editorThemeImporter, SplitSelectionLayout, PluginList, UserSettings,
-		GitSettings,
-		EditorSettings, ThemeSettings, mEditorPreferences,
-		mMetrics) {
+	'orion/generalPreferences',
+	'orion/metrics',
+	'orion/util'
+], function(messages, mGlobalCommands, PageUtil, lib, objects, URITemplate, 
+		ThemeBuilder, SettingsList, mThemePreferences, editorThemeData, editorThemeImporter, SplitSelectionLayout, PluginList, 
+		GitSettings, EditorSettings, ThemeSettings, UserSettings, GlobalizationSettings, GeneralSettings, mEditorPreferences, mGeneralPreferences, mMetrics, util) {
 
 	/**
 	 * @param {Object} options
@@ -52,6 +53,14 @@ define([
 		this.pluginsUri = getPluginsRefs[0] && getPluginsRefs[0].getProperty("uri"); //$NON-NLS-0$
 
 		this.settingsCategories = [];
+		
+		var pluginsUpdated = function() {
+			this.show();
+		}.bind(this);
+
+		this.settingsCore.pluginRegistry.addEventListener("started", pluginsUpdated);
+		this.settingsCore.pluginRegistry.addEventListener("stopped", pluginsUpdated);
+		this.settingsCore.pluginRegistry.addEventListener("updated", pluginsUpdated);
 	}
 	SettingsContainer.prototype = Object.create(superPrototype);
 	objects.mixin(SettingsContainer.prototype, {
@@ -61,10 +70,11 @@ define([
 		show: function() {
 			var _self = this;
 
-			Deferred.all([this.preferences.getPreferences('/settingsContainer')]).then(function(results){
-				var prefs = results[0];
-				var categories = prefs.get( 'categories' ) || {};
-				if (categories.showUserSettings === undefined || categories.showUserSettings) {
+			this.preferences.get('/settingsContainer').then(function(prefs){ //$NON-NLS-1$
+				_self.settingsCategories = [];
+			
+				var categories = prefs[ 'categories' ] || {};
+				if (!util.isElectron && (categories.showUserSettings === undefined || categories.showUserSettings)) {
 					_self.settingsCategories.push({
 						id: "userSettings", //$NON-NLS-0$
 						textContent: messages["User Profile"],
@@ -103,6 +113,22 @@ define([
 						show: _self.showPlugins
 					});
 				}
+				
+				if (categories.showGlobalizationSettings === undefined || categories.showGlobalizationSettings) {
+					_self.settingsCategories.push({
+						id: "Globalization", //$NON-NLS-0$
+						textContent: messages.Globalization,
+						show: _self.showGlobalizationSettings
+					});
+				}
+
+				if (categories.showGeneralSettings === undefined || categories.showGeneralSettings) {
+					_self.settingsCategories.push({
+						id: "General", //$NON-NLS-0$
+						textContent: messages.General,
+						show: _self.showGeneralSettings
+					});
+				}
 
 				_self.settingsCategories.forEach(function(item) {
 					item.show = item.show.bind(_self, item.id);
@@ -129,10 +155,10 @@ define([
 				
 				_self.drawUserInterface();
 	
-				window.addEventListener("hashchange", _self.processHash.bind(_self)); //$NON-NLS-0$
+				window.addEventListener("hashchange", _self.processHash.bind(_self));
 	
 				mGlobalCommands.setPageTarget({task: messages['Settings'], serviceRegistry: _self.registry, commandService: _self.commandService});
-				
+
 				mMetrics.logPageLoadTiming("interactive", window.location.pathname); //$NON-NLS-0$
 				mMetrics.logPageLoadTiming("complete", window.location.pathname); //$NON-NLS-0$
 			});
@@ -141,19 +167,11 @@ define([
 		processHash: function() {
 			var pageParams = PageUtil.matchResourceParameters();
 			
-			this.preferences.getPreferences('/settingsContainer').then(function(prefs){
+			this.preferences.get('/settingsContainer').then(function(prefs){ //$NON-NLS-1$
 
-				var selection = prefs.get( 'selection' );
+				var selection = prefs['selection'];
 
-				var category = pageParams.category || selection; //$NON-NLS-0$
-
-				if(this.selectedCategory){
-					if( this.selectedCategory.id === category){
-						//No need to reselect the category
-						return;
-					}
-				}
-				
+				var category = pageParams.category || selection;
 				if (!category) {
 					// no selection exists, select the first one
 					category = this.settingsCategories[0].id;
@@ -274,11 +292,11 @@ define([
 			var command = {
 				name:messages.Import,
 				tip:messages['Import a theme'],
-				id: "orion.importTheme",
+				id: "orion.importTheme", //$NON-NLS-1$
 				callback: themeImporter.showImportThemeDialog.bind(themeImporter)
 			};
 			this.commandService.addCommand(command);
-			this.commandService.registerCommandContribution('themeCommands', "orion.importTheme", 4); //$NON-NLS-1$ //$NON-NLS-0$
+			this.commandService.registerCommandContribution('themeCommands', "orion.importTheme", 4); //$NON-NLS-1$ //$NON-NLS-2$
 			var editorPreferences = new mEditorPreferences.EditorPreferences (this.preferences);
 
 			this.themeSettings = new ThemeSettings({
@@ -295,6 +313,64 @@ define([
 			this.themeSettings.show();
 		},
 		
+		showGlobalizationSettings: function(id){
+
+			this.selectCategory(id);
+
+			lib.empty(this.table);
+
+			if (this.globalizationWidget) {
+				this.globalizationWidget.destroy();
+			}
+
+			this.updateToolbar(id);
+			
+			var userNode = document.createElement('div'); //$NON-NLS-0$
+			this.table.appendChild(userNode);
+
+			this.globalizationWidget = new GlobalizationSettings({
+				registry: this.registry,
+				settings: this.settingsCore,
+				preferences: this.preferences,
+				statusService: this.preferencesStatusService,
+				dialogService: this.preferenceDialogService,
+				commandService: this.commandService,
+				userClient: this.userClient	
+			}, userNode);
+			
+			this.globalizationWidget.show();
+		},
+		
+		showGeneralSettings: function(id){
+
+			this.selectCategory(id);
+
+			lib.empty(this.table);
+
+			if (this.generalWidget) {
+				this.generalWidget.destroy();
+			}
+
+			this.updateToolbar(id);
+			
+			var userNode = document.createElement('div'); //$NON-NLS-0$
+			this.table.appendChild(userNode);
+			
+			var generalPreferences = new mGeneralPreferences.GeneralPreferences (this.preferences);
+
+			this.generalWidget = new GeneralSettings({
+				registry: this.registry,
+				settings: this.settingsCore,
+				preferences: generalPreferences,
+				statusService: this.preferencesStatusService,
+				dialogService: this.preferenceDialogService,
+				commandService: this.commandService,
+				userClient: this.userClient	
+			}, userNode);
+			
+			this.generalWidget.show();
+		},
+		
 		initPlugins: function(id){
 			lib.empty(this.table);
 
@@ -309,6 +385,7 @@ define([
 				settings: this.settingsCore,
 				preferences: this.preferences,
 				statusService: this.preferencesStatusService,
+				progressService: this.progressService,
 				dialogService: this.preferenceDialogService,
 				commandService: this.commandService,
 				registry: this.registry,
@@ -345,7 +422,8 @@ define([
 				serviceRegistry: this.registry,
 				commandRegistry: this.commandService,
 				settings: settingsInCategory,
-				title: title
+				title: title,
+				fileClient: this.fileClient
 			});
 		},
 
@@ -375,17 +453,17 @@ define([
 		},
 		
 		selectCategory: function(id) {
-			this.preferences.getPreferences('/settingsContainer').then(function(prefs){
-				prefs.put( 'selection', id );
-			} );
+			this.preferences.put('/settingsContainer', {selection: id}); //$NON-NLS-1$
 
 			superPrototype.selectCategory.apply(this, arguments);
 
 			var params = PageUtil.matchResourceParameters();
 			if (params.category !== id) {
 				params.category = id;
+				var resource = params.resource;
 				delete params.resource;
-				window.location = new URITemplate("#,{params*}").expand({ //$NON-NLS-0$
+				window.location = new URITemplate("#{,resource,params*}").expand({ //$NON-NLS-0$
+					resource: resource,
 					params: params
 				});
 			}
@@ -409,9 +487,9 @@ define([
 
 		addCategory: function(category) {
 			category['class'] = (category['class'] || '') + ' navbar-item'; //$NON-NLS-1$ //$NON-NLS-0$
-			category.role = "tab";
+			category.role = "tab"; //$NON-NLS-1$
 			category.tabindex = -1;
-			category["aria-selected"] = "false"; //$NON-NLS-1$ //$NON-NLS-0$
+			category["aria-selected"] = "false"; //$NON-NLS-1$
 			category.onclick = category.show;
 			superPrototype.addCategory.apply(this, arguments);
 		},
@@ -423,14 +501,17 @@ define([
 			});
 		},
 
+		/**
+		 * @callback
+		 */
 		drawUserInterface: function(settings) {
 			superPrototype.drawUserInterface.apply(this, arguments);
 			this.addCategories();
 			this.processHash();
 		},
 		
-		handleError: function( error ){
-			window.console.log( error );
+		handleError: function(error){
+			window.console.log(error);
 		}
 	});
 	return SettingsContainer;

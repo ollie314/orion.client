@@ -11,10 +11,11 @@
 /*eslint-env browser, amd*/
 define([
 	'i18n!cfui/nls/messages',
+	'orion/i18nUtil',
 	'orion/webui/tooltip',
 	'orion/webui/Wizard',
 	'orion/webui/littlelib'
-], function(messages, mTooltip, mWizard, lib){
+], function(messages, i18nUtil, mTooltip, mWizard, lib){
 	var Tooltip = mTooltip.Tooltip;
 	
 	var rendered = false;
@@ -44,10 +45,15 @@ define([
 			this._manifestInstrumentation = options.ManifestInstrumentation || {};
 			this._getTargetSelection = options.getTargetSelection;
 			
+			this._initManifestPath = options.InitManifestPath;
+			this._getUserPath = options.getUserPath;
+			this._getPlan = options.getPlan;
+			
 			this._cfService = options.CFService;
 			
 			this._showMessage = options.showMessage;
 			this._hideMessage = options.hideMessage;
+			this._showError = options.showError;
 			this._handleError = options.handleError;
 			this._postError = options.postError;
 		},
@@ -186,7 +192,7 @@ define([
 							if(!Array.isArray(services)){
 								if(typeof services === "object"){ //$NON-NLS-0$
 									services = Object.keys(services);
-									if(services.lengh > 0){
+									if(services.length > 0){
 										document.getElementById("allServicesLabel").appendChild(document.createElement("br")); //$NON-NLS-0$//$NON-NLS-1$
 										document.getElementById("allServicesLabel").appendChild(document.createTextNode(messages["convertMyManifest.ymlFileTo"])); //$NON-NLS-0$
 									}
@@ -217,9 +223,11 @@ define([
 						self._cfService.getServices(self._targetSelection).then(function(servicesResp){
 							self._hideMessage();
 					    	var servicesToChooseFrom = [];
+					    	var availableServices = [];
 					    	
 							if(servicesResp.Children){
 								servicesResp.Children.forEach(function(service){
+									availableServices.push(service.Name);
 									if(services && services.some(function(manService){return manService === service.Name;})){
 										
 									} else {
@@ -237,11 +245,50 @@ define([
 								self._servicesDropdown.appendChild(serviceOption);
 					    	});
 					    	
+					    	services.every(function(serviceName){
+					    		if( availableServices.indexOf(serviceName) === -1 ){
+					    			var errMessage = i18nUtil.formatMessage(messages["service${0}NotFoundsetUpYourService.Go${1}"], serviceName, self._targetSelection.ManageUrl);
+					    			self._showError(errMessage);
+					    			return false;
+								}
+					    		return true;
+							});					    	
+					   
+					    	
 				    	}, function(error){
 				    		self._handleError(error, self._targetSelection);
 				    	});
 						
+						
+						
 						setRendered(true);
+					}
+					
+					if(self._getUserPath() != self._initManifestPath){
+						self._getPlan().then(function(result){
+
+							self._manifestApplication = result.Manifest.applications[0];
+							if(self._servicesList.hasChildNodes()){
+								lib.empty(self._servicesList);
+								self._servicesList.classList.remove("modifiedCell");
+							}
+
+							var services = self._manifestApplication.services;
+							if(services){
+								services.forEach(function(serviceName){
+					    			var serviceOption = document.createElement("option"); //$NON-NLS-0$
+					    			if(typeof serviceName !== "string"){ //$NON-NLS-0$
+					    				return;
+					    			}
+									serviceOption.appendChild(document.createTextNode(serviceName));
+									serviceOption.service = serviceName;
+									serviceOption.id = "service_" + serviceName; //$NON-NLS-0$
+									new Tooltip({ node: serviceOption, text: serviceName });
+									self._servicesList.appendChild(serviceOption);
+				    			});
+							}
+							self._initManifestPath = self._getUserPath();
+						});
 					}
 			    },
 			    

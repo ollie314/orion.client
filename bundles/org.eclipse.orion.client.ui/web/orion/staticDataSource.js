@@ -15,10 +15,16 @@ define([
 	'orion/Deferred',
 	"orion/editor/textStyler", 
 	"orion/editor/stylers/application_javascript/syntax",
+	"orion/editor/stylers/application_vnd.coffeescript/syntax",
 	"orion/editor/stylers/application_x-jsp/syntax",
+	"orion/editor/stylers/application_x-sh/syntax",
 	"orion/editor/stylers/application_xquery/syntax",
+	"orion/editor/stylers/application_sql/syntax",
 	"orion/editor/stylers/text_css/syntax",
+	"orion/editor/stylers/text_x-scss/syntax",
+	"orion/editor/stylers/text_x-less/syntax",
 	"orion/editor/stylers/text_html/syntax",
+	"orion/editor/stylers/text_jsx/syntax",
 	"orion/editor/stylers/application_json/syntax",
 	"orion/editor/stylers/text_x-csrc/syntax",
 	"orion/editor/stylers/text_x-csharp/syntax",
@@ -35,13 +41,16 @@ define([
 	"orion/editor/stylers/text_x-ruby/syntax",
 	"orion/editor/stylers/text_x-go/syntax",
 	"orion/editor/stylers/text_x-objective-c/syntax",
+	"orion/editor/stylers/text_x-properties/syntax",
+	"orion/editor/stylers/text_x-smarty/syntax",
 	"orion/editor/stylers/text_x-swift/syntax",
+	"orion/editor/stylers/text_x-typescript/syntax",
 	"orion/editor/stylers/text_x-vb/syntax",
 	"orion/editor/stylers/text_x-vbhtml/syntax",
 	'orion/editor/stylers/application_x-ejs/syntax',
 	'orion/editor/stylers/application_xml/syntax',
 	'orion/editor/stylers/text_x-yaml/syntax',
-], function(Deferred, mStyler, mJS, mJSP, mXQuery, mCss, mHtml, mJson, mC, mCS, mCSHTML, mCpp, mDockerfile, mErlang, mHaml, mJava, mJade, mLua, mPhp, mPython, mRuby, mGo, mObjectiveC, mSwift, mVB, mVBHTML, mEJS, mXml, mYaml) {
+], function(Deferred, mStyler, mJS, mCoffeescript, mJSP, mBash, mXQuery, mSQL, mCss, mScss, mLess, mHtml, mJSX, mJson, mC, mCS, mCSHTML, mCpp, mDockerfile, mErlang, mHaml, mJava, mJade, mLua, mPhp, mPython, mRuby, mGo, mObjectiveC, mProperties, mSmarty, mSwift, mTypescript, mVB, mVBHTML, mEJS, mXml, mYaml) {
 	var ContentTypes = [
 		{	id: "text/plain",
 			name: "Text",
@@ -53,6 +62,16 @@ define([
 			name: "JavaScript",
 			extension: ["js"],
 			imageClass: "file-sprite-javascript modelDecorationSprite"
+		},
+		{	id: "application/vnd.coffeescript",
+			"extends": "text/plain",
+			name: "CoffeeScript",
+			extension: ["coffee"]
+		},
+		{	id: "text/jsx",
+			"extends": "text/plain",
+			name: "JSX",
+			extension: ["jsx"]
 		},
 		{	id: "text/html",
 			"extends": "text/plain",
@@ -66,11 +85,26 @@ define([
 			extension: ["css"],
 			imageClass: "file-sprite-css modelDecorationSprite"
 		},
+		{	id: "text/x-scss",
+			"extends": "text/plain",
+			name: "SCSS",
+			extension: ["scss", "sass"]
+		},
+		{	id: "text/x-less",
+			"extends": "text/plain",
+			name: "Less",
+			extension: ["less"]
+		},
 		{	id: "application/json",
 			"extends": "text/plain",
 			name: "JSON",
 			extension: ["json"],
 			imageClass: "file-sprite-text modelDecorationSprite"
+		},
+		{	id: "application/sql",
+			"extends": "text/plain",
+			name: "SQL",
+			extension: ["sql"]
 		},
 		{	id: "application/xml",
 			"extends": "text/plain",
@@ -93,6 +127,11 @@ define([
 			"extends": "text/plain",
 			name: "Java Server Page",
 			extension: ["jsp"]
+		},
+		{	id: "application/x-sh",
+			"extends": "text/plain",
+			name: "Bash",
+			extension: ["sh"]
 		},
 		{	id: "text/x-jade",
 			"extends": "text/plain",
@@ -129,10 +168,25 @@ define([
 			name: "PHP",
 			extension: ["php", "php3", "php4", "php5", "phpt", "phtml", "aw", "ctp"]
 		},
+		{	id: "text/x-properties",
+			"extends": "text/plain",
+			name: "Properties",
+			extension: ["properties"]
+		},
+		{	id: "text/x-smarty",
+			"extends": "text/plain",
+			name: "Smarty",
+			extension: ["tpl"]
+		},
 		{	id: "text/x-swift",
 			"extends": "text/plain",
 			name: "Swift",
 			extension: ["swift"]
+		},
+		{	id: "text/x-typescript",
+			"extends": "text/plain",
+			name: "Typescript",
+			extension: ["ts"]
 		},
 		{	id: "text/x-markdown",
 			"extends": "text/plain",
@@ -149,11 +203,6 @@ define([
 			name: "Conf",
 			extension: ["conf"]
 		},
-		{	id: "text/sh",
-			"extends": "text/plain",
-			name: "sh",
-			extension: ["sh"]
-		},
 		{	id: "application/browser-renderable",
 			name: "browser-renderable"
 		},
@@ -169,7 +218,7 @@ define([
 		{	id: "application/zip",
 			"extends": "application/octet-stream",
 			name: "ZIP",
-			extension: ["war", "jar", "zip", "rar"]
+			extension: ["war", "jar", "zip", "rar", "gz", "tar"]
 		},
 		{	id: "text/x-arduino",
 			"extends": "text/x-csrc",
@@ -294,14 +343,29 @@ define([
 					case "application/javascript": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mJS.grammars, "orion.js", fileContentType.id); //$NON-NLS-0$
 						break;
+					case "application/vnd.coffeescript": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mCoffeescript.grammars, "orion.coffeescript", fileContentType.id); //$NON-NLS-0$
+						break;
 					case "application/x-ejs": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mEJS.grammars, "orion.ejs", fileContentType.id); //$NON-NLS-0$
+						break;
+					case "application/x-sh": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mBash.grammars, "orion.bash", fileContentType.id); //$NON-NLS-0$
 						break;
 					case "text/css": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mCss.grammars, "orion.css", fileContentType.id); //$NON-NLS-0$
 						break;
+					case "text/x-scss": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mScss.grammars, "orion.scss", fileContentType.id); //$NON-NLS-0$
+						break;
+					case "text/x-less": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mLess.grammars, "orion.less", fileContentType.id); //$NON-NLS-0$
+						break;
 					case "text/html": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mHtml.grammars, "orion.html", fileContentType.id); //$NON-NLS-0$
+						break;
+					case "text/jsx": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mJSX.grammars, "orion.jsx", fileContentType.id); //$NON-NLS-0$
 						break;
 					case "text/x-java-source": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mJava.grammars, "orion.java", fileContentType.id); //$NON-NLS-0$
@@ -312,6 +376,9 @@ define([
 					case "application/json": //$NON-NLS-0$
 					case "text/x-launch": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mJson.grammars, "orion.json", fileContentType.id); //$NON-NLS-0$
+						break;
+					case "application/sql": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mSQL.grammars, "orion.sql", fileContentType.id); //$NON-NLS-0$
 						break;
 					case "text/x-jade": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mJade.grammars, "orion.jade", fileContentType.id); //$NON-NLS-0$
@@ -331,8 +398,17 @@ define([
 					case "text/x-php": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mPhp.grammars, "orion.php", fileContentType.id); //$NON-NLS-0$
 						break;
+					case "text/x-properties": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mProperties.grammars, "orion.properties", fileContentType.id); //$NON-NLS-0$
+						break;
+					case "text/x-smarty": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mSmarty.grammars, "orion.smarty", fileContentType.id); //$NON-NLS-0$
+						break;
 					case "text/x-swift": //$NON-NLS-0$
 						stylerAdapter = new mStyler.createPatternBasedAdapter(mSwift.grammars, "orion.swift", fileContentType.id); //$NON-NLS-0$
+						break;
+					case "text/x-typescript": //$NON-NLS-0$
+						stylerAdapter = new mStyler.createPatternBasedAdapter(mTypescript.grammars, "orion.typescript", fileContentType.id); //$NON-NLS-0$
 						break;
 					case "application/xml": //$NON-NLS-0$
 					case "application/xhtml+xml": //$NON-NLS-0$

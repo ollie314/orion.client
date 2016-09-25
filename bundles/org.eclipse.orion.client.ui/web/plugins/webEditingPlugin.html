@@ -15,7 +15,9 @@
 		  }
 		});
 
-		require(["plugins/webEditingPlugin"]);
+		require(["plugins/webEditingPlugin"], function(plugin) {
+			plugin.connect();
+		});
 	</script>
 </head>
 <body>

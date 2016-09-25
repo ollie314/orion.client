@@ -19,7 +19,6 @@ define({//Default message bundle
 	"task": "Task", //$NON-NLS-1$ //$NON-NLS-0$
 	"error": "Error", //$NON-NLS-1$ //$NON-NLS-0$
 	"warning": "Warning", //$NON-NLS-1$ //$NON-NLS-0$
-	"matchingSearch": "Matching Search", //$NON-NLS-1$ //$NON-NLS-0$
 	"currentSearch": "Current Search", //$NON-NLS-1$ //$NON-NLS-0$
 	"currentLine": "Current Line", //$NON-NLS-1$ //$NON-NLS-0$
 	"matchingBracket": "Matching Bracket", //$NON-NLS-1$ //$NON-NLS-0$
@@ -103,6 +102,7 @@ define({//Default message bundle
 	"incrementalFindStrNotFound": "Incremental find: ${0} (not found)", //$NON-NLS-1$ //$NON-NLS-0$
 	"incrementalFindReverseStr": "Reverse Incremental find: ${0}", //$NON-NLS-1$ //$NON-NLS-0$
 	"incrementalFindReverseStrNotFound": "Reverse Incremental find: ${0} (not found)", //$NON-NLS-1$ //$NON-NLS-0$
+	"findReplace": "Find/Replace", //$NON-NLS-1$ //$NON-NLS-0$
 	"find": "Find...", //$NON-NLS-1$ //$NON-NLS-0$
 	"undo": "Undo", //$NON-NLS-1$ //$NON-NLS-0$
 	"redo": "Redo", //$NON-NLS-1$ //$NON-NLS-0$
@@ -131,11 +131,14 @@ define({//Default message bundle
 	"toggleLineComment": "Toggle Line Comment", //$NON-NLS-1$ //$NON-NLS-0$
 	"addBlockComment": "Add Block Comment", //$NON-NLS-1$ //$NON-NLS-0$
 	"removeBlockComment": "Remove Block Comment", //$NON-NLS-1$ //$NON-NLS-0$
-	"linkedModeEntered": "Linked Mode entered", //$NON-NLS-1$ //$NON-NLS-0$
+	"linkedModeEntered": "Linked Mode: Enter or ESC to exit", //$NON-NLS-1$ //$NON-NLS-0$
 	"linkedModeExited": "Linked Mode exited", //$NON-NLS-1$ //$NON-NLS-0$
 	"syntaxError": "Syntax Error", //$NON-NLS-1$ //$NON-NLS-0$
 	"contentAssist": "Content Assist", //$NON-NLS-1$ //$NON-NLS-0$
+	"noProposals": "No proposals found",
+	"computingProposals": "Computing content assist proposals...",
 	"lineColumn": "Line ${0} : Column ${1}", //$NON-NLS-1$ //$NON-NLS-0$
+	"lineColumnOffset": "Line ${0} : Column ${1} : Offset ${2}",
 	"multiSelections": "${0} selection regions", //$NON-NLS-1$ //$NON-NLS-0$
 	
 	//vi
@@ -150,10 +153,10 @@ define({//Default message bundle
 	"viDown": "${0} Down", //$NON-NLS-1$ //$NON-NLS-0$
 	"viw": "${0} Next Word", //$NON-NLS-1$ //$NON-NLS-0$
 	"vib": "${0} Beginning of Word", //$NON-NLS-1$ //$NON-NLS-0$
-	"viW": "${0} Next Word (ws stop)", //$NON-NLS-1$ //$NON-NLS-0$
-	"viB": "${0} Beginning of Word (ws stop)", //$NON-NLS-1$ //$NON-NLS-0$
+	"viW": "${0} Next Word (ws stop)", //$NON-NLS-1$ //$NON-NLS-0$ // ws stop refers to word space (next blank space delimited word)
+	"viB": "${0} Beginning of Word (ws stop)", //$NON-NLS-1$ //$NON-NLS-0$ // ws stop refers to word space (next blank space delimited word)
 	"vie": "${0} End of Word", //$NON-NLS-1$ //$NON-NLS-0$
-	"viE": "${0} End of Word (ws stop)", //$NON-NLS-1$ //$NON-NLS-0$
+	"viE": "${0} End of Word (ws stop)", //$NON-NLS-1$ //$NON-NLS-0$ // ws stop refers to word space (next blank space delimited word)
 	"vi$": "${0} End of the line", //$NON-NLS-1$ //$NON-NLS-0$
 	"vi^_": "${0} First non-blank Char Current Line", //$NON-NLS-1$ //$NON-NLS-0$
 	"vi+": "${0} First Char Next Line", //$NON-NLS-1$ //$NON-NLS-0$
@@ -198,7 +201,7 @@ define({//Default message bundle
 	"regex": "/.*/", //$NON-NLS-1$ //$NON-NLS-0$
 	"wholeWord": "\\b", //$NON-NLS-1$ //$NON-NLS-0$
 	"caseInsensitiveTooltip": "Toggle Case Insensitive", //$NON-NLS-1$ //$NON-NLS-0$
-	"regexTooltip": "Toggle Regex", //$NON-NLS-1$ //$NON-NLS-0$
+	"regexTooltip": "Toggle Regular Expression", //$NON-NLS-1$ //$NON-NLS-0$
 	"wholeWordTooltip": "Toggle Whole Word", //$NON-NLS-1$ //$NON-NLS-0$
 	"closeTooltip": "Close", //$NON-NLS-1$ //$NON-NLS-0$
 

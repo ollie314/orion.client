@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2014 IBM Corporation and others.
+ * Copyright (c) 2014, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made
  * available under the terms of the Eclipse Public License v1.0
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
@@ -95,7 +95,7 @@ define([
 
 			var userManifest = options.Manifest;
 			var contentLocation = options.ContentLocation;
-			var appPath = options.AppPath;
+			var appPath = options.getManifestPath();
 
 			var selection = targetSelection.getSelection();
 			if(selection === null || selection.length === 0){
@@ -107,7 +107,6 @@ define([
 			disableUI();
 
 			var instrumentation = _getManifestInstrumentation(userManifest, results);
-			var devMode = options.getDevMode ? options.getDevMode() : null;
 			
 			var appName = results.name;
 			var target = selection;
@@ -123,7 +122,7 @@ define([
 				}
 
 				showMessage(messages["saving..."]); //$NON-NLS-0$
-				return mCfUtil.prepareLaunchConfigurationContent(confName, target, appName, appPath, instrumentation, devMode).then(
+				return mCfUtil.prepareLaunchConfigurationContent(confName, target, appName, appPath, instrumentation).then(
 					function(launchConfigurationContent){
 						postMsg(launchConfigurationContent);
 					});
@@ -174,7 +173,7 @@ define([
 			}
 			return false;
 		}, function(error) {
-			if (error.status === 404) {
+			if (error.status === 404 || error.status === 410) {
 				return false;
 			}
 			throw error;

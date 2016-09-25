@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2011, 2014 IBM Corporation and others.
+ * Copyright (c) 2011, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -102,8 +102,17 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 		dfault : "proposal-default" //$NON-NLS-0$
 	};
 	
-	function ContentAssist(textView) {
+	/**
+	 * @name ContentAssist
+	 * @description Creates a new content assist manager for the given text view
+	 * @param textView The text view to provide content assist for
+	 * @param serviceRegistry Optional, used to look up page message service for status
+	 */
+	function ContentAssist(textView, serviceRegistry) {
 		this.textView = textView;
+		if (serviceRegistry){
+			this.pageMessage = serviceRegistry.getService("orion.page.message"); //$NON-NLS-1$
+		}
 		this.state = State.INACTIVE;
 		this.clearProviders();
 		var self = this;
@@ -270,7 +279,7 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			var selectionStart = Math.min(sel.start, sel.end);			
 			this._initialCaretOffset = Math.min(offset, selectionStart);
 			this._computedProposals = null;
-			
+			delete this._autoApply;
 			this._computeProposals(this._initialCaretOffset).then(function(proposals) {
 				if (this.isActive()) {
 					var flatProposalArray = this._flatten(proposals);
@@ -278,7 +287,8 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 					if (flatProposalArray && Array.isArray(flatProposalArray) && (0 < flatProposalArray.length)) {
 						this._computedProposals = proposals;
 					}
-					this.dispatchEvent({type: "ProposalsComputed", data: {proposals: flatProposalArray}, autoApply: !this._autoTriggered}); //$NON-NLS-0$
+					var autoApply = typeof this._autoApply === 'boolean' ? this._autoApply : !this._autoTriggerEnabled;
+					this.dispatchEvent({type: "ProposalsComputed", data: {proposals: flatProposalArray}, autoApply: autoApply}); //$NON-NLS-0$
 					if (this._computedProposals && this._filterText) {
 						// force filtering here because user entered text after
 						// computeProposals() was called but before the plugins
@@ -339,37 +349,102 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			var indentation = line.substring(0, index);
 			var options = textView.getOptions("tabSize", "expandTab"); //$NON-NLS-1$ //$NON-NLS-0$
 			var tab = options.expandTab ? new Array(options.tabSize + 1).join(" ") : "\t"; //$NON-NLS-1$ //$NON-NLS-0$
-			var params = {
-				line: line,
-				offset: mapOffset,
-				prefix: model.getText(this.getPrefixStart(model, mapOffset), mapOffset),
-				selection: sel,
-				delimiter: model.getLineDelimiter(),
-				tab: tab,
-				indentation: indentation
-			};
-			var self = this;
+			var lineDelimiter = model.getLineDelimiter();
+			var _self = this;
 			var promises = providerInfoArray.map(function(providerInfo) {
 				var provider = providerInfo.provider;
+				var computePrefixFunc = provider.computePrefix;
+				var ecProvider;
+				var editorContext;
 				var proposals;
+				var func;
+				var promise;
+				var params;
+				if(typeof providerInfo.autoApply === 'boolean') {
+					_self._autoApply = providerInfo.autoApply;
+				}
+				if (computePrefixFunc) {
+					ecProvider = _self.editorContextProvider;
+					editorContext = ecProvider.getEditorContext();
+					var result = computePrefixFunc.apply(provider, [editorContext, mapOffset]);
+					return result.then(function(prefix) {
+						params = {
+							line: line,
+							offset: mapOffset,
+							prefix: prefix,
+							selection: sel,
+							delimiter: lineDelimiter,
+							tab: tab,
+							indentation: indentation
+						};
+						try {
+							if ((func = provider.computeContentAssist)) {
+								params = objects.mixin(params, ecProvider.getOptions());
+								promise = func.apply(provider, [editorContext, params]);
+							} else if ((func = provider.getProposals || provider.computeProposals)) {
+								// old API
+								promise = func.apply(provider, [model.getText(), mapOffset, params]);
+							}
+							proposals = _self.progress ? _self.progress.progress(promise, "Generating content assist proposal") : promise; //$NON-NLS-0$
+						} catch (e) {
+							return new Deferred().reject(e);
+						}
+						return Deferred.when(proposals);
+					},
+					function(err) {
+						return new Deferred().reject(err);
+					});
+				}
+				// no computePrefix function is defined for the provider. Use the default prefix
+				params = {
+					line: line,
+					offset: mapOffset,
+					prefix: model.getText(_self.getPrefixStart(model, mapOffset), mapOffset),
+					selection: sel,
+					delimiter: lineDelimiter,
+					tab: tab,
+					indentation: indentation
+				};
 				try {
-					var func, promise;
 					if ((func = provider.computeContentAssist)) {
-						var ecProvider = self.editorContextProvider, editorContext = ecProvider.getEditorContext();
+						ecProvider = _self.editorContextProvider;
+						editorContext = ecProvider.getEditorContext();
 						params = objects.mixin(params, ecProvider.getOptions());
 						promise = func.apply(provider, [editorContext, params]);
 					} else if ((func = provider.getProposals || provider.computeProposals)) {
 						// old API
 						promise = func.apply(provider, [model.getText(), mapOffset, params]);
 					}
-					proposals = self.progress ? self.progress.progress(promise, "Generating content assist proposal") : promise; //$NON-NLS-0$
+					proposals = _self.progress ? _self.progress.progress(promise, "Generating content assist proposal") : promise; //$NON-NLS-0$
 				} catch (e) {
 					return new Deferred().reject(e);
 				}
 				return Deferred.when(proposals);
 			});
+			
 			// TODO should we allow error to propagate instead of handling here?
-			return Deferred.all(promises, this.handleError);
+			var allPromises = Deferred.all(promises, this.handleError);
+			
+			if (this.pageMessage){
+				allPromises = Deferred.when(allPromises, function(proposals){
+					_self.pageMessage.close();
+					var foundProposal = false;
+					if (proposals && proposals.length > 0){
+						for (var i=0; i<proposals.length; i++) {
+							if (Array.isArray(proposals[i]) && proposals[i].length > 0){
+								foundProposal = true;
+								break;
+							}
+						}
+					}
+					if (!foundProposal){
+						_self.pageMessage.setErrorMessage(messages["noProposals"]);
+					}
+					return proposals;
+				});
+				this.pageMessage.showWhile(allPromises, messages["computingProposals"]);
+			}
+			return allPromises;
 		},
 
 		filterProposals: function(force) {
@@ -386,16 +461,22 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 				this._computedProposals.forEach(function(proposalArray) {
 					if (proposalArray && Array.isArray(proposalArray)) {
 						var includedProposals = proposalArray.filter(function(proposal) {
+							function getRegexp(prefix, filter) {
+								var modifiedFilter = filter.replace(/([.+^=!:${}()|\[\]\/\\])/g, "\\$1"); //add start of line character and escape all special characters except * and ? //$NON-NLS-1$ //$NON-NLS-0$
+								modifiedFilter = modifiedFilter.replace(/([*?])/g, ".$1"); //convert user input * and ? to .* and .? //$NON-NLS-0$
+								return new RegExp("^" + prefix + modifiedFilter, "i");
+							}
+							var pattern;
 							if (!proposal) {
 								return false;
 							}
 							if(typeof proposal.prefix === 'string') {
-							    prefixText = proposal.prefix;
+								prefixText = proposal.prefix;
 							} else {
-							    prefixText = defaultPrefix;
+								prefixText = defaultPrefix;
 							}
-							if ((STYLES[proposal.style] === STYLES.hr)
-								|| (STYLES[proposal.style] === STYLES.noemphasis_title)) {
+							if (STYLES[proposal.style] === STYLES.hr
+								|| STYLES[proposal.style] === STYLES.noemphasis_title) {
 								return true;
 							}
 							
@@ -408,31 +489,32 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 								} else {
 									return false; // unknown format
 								}
-			
-								return (0 === proposalString.indexOf(prefixText + this._filterText));
-								
+								pattern = getRegexp(prefixText, this._filterText);
+								return pattern.test(proposalString);
 							} else if (proposal.name || proposal.proposal) {
 								var activated = false;
 								// try matching name
 								if (proposal.name) {
-									activated = (0 === proposal.name.indexOf(prefixText + this._filterText));	
+									pattern = getRegexp(prefixText, this._filterText);
+									activated = pattern.test(proposal.name);
 								}
 								
 								// try matching proposal text
 								if (!activated && proposal.proposal) {
-									activated = (0 === proposal.proposal.indexOf(this._filterText));
+									pattern = getRegexp("", this._filterText);
+									activated = pattern.test(proposal.proposal);
 								}
 								
 								return activated;
 							} else if (typeof proposal === "string") { //$NON-NLS-0$
-								return 0 === proposal.indexOf(this._filterText);
-							} else {
-								return false;
+								pattern = getRegexp("", this._filterText);
+								return pattern.test(proposal);
 							}
+							return false;
 						}, this);
 						
 						if (includedProposals.length > 0) {
-							proposals.push(includedProposals);	
+							proposals.push(includedProposals);
 						}
 					}
 				}, this);
@@ -607,7 +689,7 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 					var last = prev;
 					var filteredArrayStyle = filteredArray[0].style;
 					
-					if (filteredArrayStyle && (0 === STYLES[filteredArrayStyle].indexOf(STYLES.noemphasis))) {
+					if (filteredArrayStyle && STYLES[filteredArrayStyle] && (0 === STYLES[filteredArrayStyle].indexOf(STYLES.noemphasis))) {
 						// the style of the first element starts with noemphasis
 						// add these proposals to the end of the array
 						first = prev;
@@ -945,13 +1027,18 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			return true;
 		},
 		
-		_showTooltip: function(update) {
+		/**
+		 * Opens the tooltip for the selected proposal beside the content assist window
+		 * @param update if false, the tooltip will be hidden then reopened with the new contents
+		 * @param noContent if true the current tooltip contents will not be replaced, just size and position updated
+		 */
+		_showTooltip: function(update, noContent) {
 			var tooltip = mTooltip.Tooltip.getTooltip(this.contentAssist.textView);
 			var self = this;
 			var target = {
 				getTooltipInfo: function() {
-					var bounds = lib.bounds(self.widget.parentNode);
-					var tipArea = {width: 350, height: bounds.height - 10, top: bounds.top};
+					var bounds = self.widget.parentNode.getBoundingClientRect();
+					var tipArea = {width: 350, height: bounds.height, top: bounds.top};
 					if ((bounds.left + bounds.width) >= document.documentElement.clientWidth){
 						tipArea.left = bounds.left - tipArea.width;
 						tipArea.left -= 10;
@@ -969,7 +1056,7 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			};
 			
 			if (update) {
-				tooltip.update(target);
+				tooltip.update(target, noContent);
 			} else {
 				tooltip.show(target, true, false);
 			}
@@ -977,7 +1064,7 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 		
 		_hideTooltip: function() {
 			var tooltip = mTooltip.Tooltip.getTooltip(this.contentAssist.textView);
-			tooltip.hide();
+			tooltip.hide(true); // Clear the lock
 		},
 
 		pageUp: function() {
@@ -1038,6 +1125,7 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 		this.textView = this.contentAssist.getTextView();
 		this.textViewListenerAdded = false;
 		this.isShowing = false;
+		this._useResizeTimer = false;
 		var document = this.textView.getOptions("parent").ownerDocument; //$NON-NLS-0$
 		this.parentNode = typeof parentNode === "string" ? document.getElementById(parentNode) : parentNode; //$NON-NLS-0$
 		if (!this.parentNode) {
@@ -1049,6 +1137,14 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			} else {
 				throw new Error("parentNode is required"); //$NON-NLS-0$
 			}
+		}
+		var MO = window.MutationObserver || window.MozMutationObserver;
+		if (MO && util.isFirefox) {//MutationObserver does not work in chrome for resize https://code.google.com/p/chromium/issues/detail?id=293948
+			this._mutationObserver = new MO(function(mutations) {
+				this._contentAssistMode._showTooltip(true, true);
+			}.bind(this));
+		} else {
+			this._useResizeTimer = true;
 		}
 		
 		textUtil.addEventListener(this.parentNode, "scroll", this.onScroll.bind(this)); //$NON-NLS-0$
@@ -1070,8 +1166,10 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 		this.scrollListener = function(e) {
 			if (self.isShowing) {
 				self.position();
+				//TODO: code edit widget : redo the tooltip positioning by the same new api
 			}
 		};
+		//TODO: code edit widget : clean up the code to remove the listener here
 		textUtil.addEventListener(document, "scroll", this.scrollListener); //$NON-NLS-0$
 	}
 	ContentAssistWidget.prototype = /** @lends orion.editor.ContentAssistWidget.prototype */ {
@@ -1094,13 +1192,13 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			var document = parent.ownerDocument;
 			var div = util.createElement(document, "div"); //$NON-NLS-0$
 			div.id = "contentoption" + itemIndex; //$NON-NLS-0$
-			div.setAttribute("role", "option"); //$NON-NLS-1$ //$NON-NLS-0$
+			div.setAttribute("role", "option"); //$NON-NLS-1$ //$NON-NLS-2$
 			div.className = STYLES[proposal.style] ? STYLES[proposal.style] : STYLES.dfault;
 			var node;
 			if (proposal.style === "hr") { //$NON-NLS-0$
 				node = util.createElement(document, "hr"); //$NON-NLS-0$
 			} else {
-				node = this._createDisplayNode(div, proposal, itemIndex);
+				node = this._createDisplayNode(proposal, itemIndex);
 				div.contentAssistProposalIndex = itemIndex; // make div clickable
 			}
 			div.appendChild(node);
@@ -1137,38 +1235,72 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			});
 		},
 		/** @private */
-		_createDisplayNode: function(div, proposal, index) {
-			var node = null;
-			var plainString = null;
+		_createDisplayNode: function(proposal, index) {
+			var node = document.createElement("span"); //$NON-NLS-0$
 			
-			if (typeof proposal === "string") { //$NON-NLS-0$
-				//for simple string content assist, the display string is just the proposal
-				plainString = proposal;
-			} else if (proposal.description && typeof proposal.description === "string") { //$NON-NLS-0$
-				if (proposal.name && typeof proposal.name === "string") { //$NON-NLS-0$
-					var nameNode = this._createNameNode(proposal.name);
-					nameNode.contentAssistProposalIndex = index;
-					
-					node = document.createElement("span"); //$NON-NLS-0$
-					node.appendChild(nameNode);
-					
-					var descriptionNode = document.createTextNode(proposal.description);
-					node.appendChild(descriptionNode);
-				} else {
-					plainString = proposal.description;
-				}
+			if (!proposal){
+				return node;
+			}
+			
+			if (typeof proposal === "string"){
+				var simpleName = this._createNameNode(proposal);
+				simpleName.contentAssistProposalIndex = index;
+				return simpleName;
+			}
+			
+			var nameNode;
+			var usingDescription; // Proposals are allowed to use the description as the name
+			if (proposal.name && typeof proposal.name === "string") {
+				nameNode = this._createNameNode(proposal.name);
+			} else if (proposal.description && typeof proposal.description === "string"){
+				nameNode = this._createNameNode(proposal.description);
+				usingDescription = true;
+			} else if (proposal.proposal && typeof proposal.proposal === "string"){
+				nameNode = this._createNameNode(proposal.proposal);
 			} else {
-				//by default return the straight proposal text
-				plainString = proposal.proposal;
+				// Must have a name
+				return node;
 			}
 			
-			if (plainString) {
-				node = this._createNameNode(plainString);
-			}
+			var tagsNode = this._createTagsNode(proposal.tags);
 			
+			var descriptionNode;
+			if (!usingDescription && proposal.description && typeof proposal.description === "string") {
+				descriptionNode = document.createTextNode(proposal.description);
+			}
+
+			if (tagsNode) { node.appendChild(tagsNode); }
+			node.appendChild(nameNode);
+			if (descriptionNode) { node.appendChild(descriptionNode); }
+
+			nameNode.contentAssistProposalIndex = index;
 			node.contentAssistProposalIndex = index;
 			
-			return node;
+			return node;		
+		},
+		/** @private */
+		_stopResizeTimer: function() {
+			if (this._resizeTimer) {
+				window.clearInterval(this._resizeTimer);
+				this._resizeTimer = null; 
+			}
+		},
+		_startResizeTimer: function() {
+			this._stopResizeTimer();
+			this._cachedResizeBound = this.parentNode.getBoundingClientRect();
+			this._resizeTimer = window.setInterval(function() {
+				if(this._contentAssistMode) {
+					var bound = this.parentNode.getBoundingClientRect();
+					if(bound.left === this._cachedResizeBound.left && 
+					   bound.top === this._cachedResizeBound.top &&
+					   bound.width === this._cachedResizeBound.width &&
+					   bound.height === this._cachedResizeBound.height) {
+						return;   	
+					}
+					this._cachedResizeBound = bound;
+					this._contentAssistMode._showTooltip(true, true);
+				}
+			}.bind(this), 100);
 		},
 		/** @private */
 		_createNameNode: function(name) {
@@ -1176,6 +1308,33 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			node.classList.add("proposal-name"); //$NON-NLS-0$
 			node.appendChild(document.createTextNode(name));
 			return node;
+		},
+		/**
+		 * @private
+		 * @param tags {Array} The array of tags to display
+		 * @returns {Object} the dom node for the tags or <code>null</code>
+		 */
+		_createTagsNode: function(tags) {
+			var tagsNode = null;
+			if (tags && tags.constructor === Array && tags.length > 0){
+				tagsNode = document.createElement("span");	 //$NON-NLS-1$
+				for (var i=0; i<tags.length; i++) {
+					var tag = tags[i];
+					if (tag.content || tag.cssClass){
+						var tagNode = document.createElement("span"); //$NON-NLS-1$
+						if (tag.cssClass){
+							tagNode.classList.add(tag.cssClass);
+						} else {
+							tagNode.classList.add('proposalTag'); //$NON-NLS-1$
+						}
+						if (tag.content){
+							tagNode.textContent = tag.content;
+						}
+						tagsNode.appendChild(tagNode);
+					}
+				}
+			}
+			return tagsNode;
 		},
 		/**
 		 * @private
@@ -1262,8 +1421,8 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 					}
 					
 					var textNode = node.firstChild || node;  
-					var textBounds = lib.bounds(textNode);
-					var parentWidth = this.parentNode.clientWidth ? this.parentNode.clientWidth : lib.bounds(this.parentNode); // Scrollbar can cover text
+					var textBounds = textNode.getBoundingClientRect();
+					var parentWidth = this.parentNode.clientWidth ? this.parentNode.clientWidth : this.parentNode.getBoundingClientRect(); // Scrollbar can cover text
 					var parentStyle = window.getComputedStyle(this.parentNode);
 					var nodeStyle = window.getComputedStyle(node);
 					var allPadding = parseInt(parentStyle.paddingLeft) + parseInt(parentStyle.paddingRight) + parseInt(nodeStyle.paddingLeft) + parseInt(nodeStyle.paddingRight);
@@ -1353,6 +1512,11 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 				
 				this._contentAssistMode._showTooltip(false);
 				
+				if(this._useResizeTimer) {
+					this._startResizeTimer();
+				} else if(this._mutationObserver){
+					this._mutationObserver.observe(this.parentNode, {attributes: true});
+				}
 				if (!this.textViewListenerAdded) {
 					this.textView.addEventListener("MouseDown", this.textViewListener.onMouseDown); //$NON-NLS-0$
 					this.textViewListenerAdded = true;
@@ -1366,6 +1530,12 @@ define("orion/editor/contentAssist", [ //$NON-NLS-0$
 			this.parentNode.style.display = "none"; //$NON-NLS-0$
 			this.parentNode.onclick = null;
 			this.isShowing = false;
+			
+			if(this._useResizeTimer) {
+				this._stopResizeTimer();
+			} else if(this._mutationObserver){
+				this._mutationObserver.disconnect();
+			}
 			
 			this._contentAssistMode._hideTooltip();
 			

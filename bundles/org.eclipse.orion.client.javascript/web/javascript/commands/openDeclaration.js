@@ -1,10 +1,10 @@
 /*******************************************************************************
  * @license
  * Copyright (c) 2014, 2015 IBM Corporation and others.
- * All rights reserved. This program and the accompanying materials are made 
- * available under the terms of the Eclipse Public License v1.0 
- * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
- * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html). 
+ * All rights reserved. This program and the accompanying materials are made
+ * available under the terms of the Eclipse Public License v1.0
+ * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
+ * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html).
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -12,75 +12,102 @@
  /*eslint-env amd, browser*/
 define([
 'orion/objects',
-'javascript/finder',
-'orion/Deferred'
-], function(Objects, Finder, Deferred) {
+'orion/Deferred',
+'i18n!javascript/nls/messages',
+'orion/i18nUtil',
+'orion/URITemplate',
+], function(Objects, Deferred, Messages, i18nUtil, URITemplate) {
 	
+	var ternworker;
+
 	/**
 	 * @description Creates a new open declaration command
 	 * @constructor
 	 * @public
-	 * @param {javascript.ASTManager} ASTManager The backing AST manager
-	 * @param {javascript.ScriptResolver} Resolver The backing script resolver 
-	 * @param {TernWorker} ternWorker The running Tern worker 
+	 * @param {TernWorker} ternWorker The running Tern worker
 	 * @returns {javascript.commands.OpenDeclarationCommand} A new command
 	 * @since 8.0
 	 */
-	function OpenDeclarationCommand(ASTManager, Resolver, ternWorker) {
-		this.astManager = ASTManager;
-		this.resolver = Resolver;
-		this.ternworker = ternWorker;
+	function OpenDeclarationCommand(ternWorker, openMode) {
+		ternworker = ternWorker;
+		this.openMode = openMode;
+		this.timeout = null;
 	}
-	
+
+	/**
+	 * @description Create a human-readable name to display for the file in the declaration object
+	 * @param {Object} declaration The decl
+	 * @returns {String} The formatted string of the file the declaration references
+	 * @since 11.0
+	 */
+	function displayFileName(declaration) {
+		var fileName = declaration.file;
+		fileName = fileName.replace(/^\/file\//, "");
+		fileName = fileName.substring(fileName.indexOf("/")+1, fileName.length);
+		return i18nUtil.formatMessage(Messages['declDisplayName'], fileName, declaration.start, declaration.end);
+	}
+
 	Objects.mixin(OpenDeclarationCommand.prototype, {
 		/* override */
-		execute: function(editorContext/*, options*/) {
-		    var that = this;
-			return Deferred.all([
-				this.astManager.getAST(editorContext),
-				editorContext.getCaretOffset()
-			]).then(function(results) {
-				var node = Finder.findNode(results[1], results[0], {parents:true});
-				if(node) {
-				    var parents = node.parents;
-				    if(parents) {
-    				    var parent = parents.pop();
-    				    switch(parent.type) {
-    				        case 'CallExpression': {
-    				            if(node.type === 'Literal' && (parent.callee.name === 'require' || parent.callee.name === 'importScripts')) {
-    				                that.resolver.getWorkspaceFile(node.value).then(function(files) {
-    				                    // TODO uncomment when we get a file open strategy
-    				                    //window.open(that.resolver.convertToURL(files[0]));
-    				                });
-    				            } else {
-        				            if(parent.callee.type === 'Identifier') {
-            				            var decl = Finder.findDeclaration(results[1], results[0], {id: parent.callee.name, kind: Finder.SearchOptions.FUNCTION_DECLARATION});
-                    					if(decl) {
-                    					    return editorContext.setSelection(decl.id.range[0], decl.id.range[1]);
-                    					}
-                					} else if(parent.callee.type === 'MemberExpression') {
-                					    //TODO need the env to find the containing object expression / func expr
-                					}
-            					}
-            					break;
-    				        }
-    				        case 'ArrayExpression': {
-    				            parent = parents.pop();
-    				            if(parent.type === 'CallExpression' && parent.callee.name === 'define') {
-    				                that.resolver.getWorkspaceFile(node.value).then(function(files) {
-    				                    // TODO uncomment when we get a file open strategy
-    				                    //window.open(that.resolver.convertToURL(files[0]));
-    				                });
-    				            }
-    				            break;
-    				        }
-    				    }
-				    }
-				}
-			});
+		execute: function(editorContext, options) {
+			var that = this;
+			var deferred = new Deferred();
+			editorContext.getText().then(function(text) {
+				return that._findDecl(editorContext, options, text, deferred);
+			}, deferred.reject);
+			return deferred;
+		},
+
+		_findDecl: function(editorContext, options, text, deferred) {
+			if(this.timeout) {
+				clearTimeout(this.timeout);
+			}
+			this.timeout = setTimeout(function() {
+				deferred.reject({Severity: 'Error', Message: Messages['noDeclTimedOut']}); //$NON-NLS-1$
+				this.timeout = null;
+			}, 10000);
+			var files = [{type: 'full', name: options.input, text: text}]; //$NON-NLS-1$
+			ternworker.postMessage(
+				{request:'definition', args:{params:{offset: options.offset}, guess: true, files: files, meta:{location: options.input}}}, //$NON-NLS-1$
+				function(response) {
+					if(response.declaration) {
+						if (response.declaration.results) {
+							// build up the message based on potential matches
+							var display = Object.create(null);
+							display.Severity = 'Status'; //$NON-NLS-0$
+							var message = Messages['declPotentialHeader'];
+							var declarations = response.declaration.results;
+							declarations.forEach(function(decl) {
+								if (typeof decl.start  === 'number' && typeof decl.end === 'number') {
+									var href = new URITemplate("#{,resource,params*}").expand( //$NON-NLS-1$
+										{
+											resource: decl.file,
+											params: {start:decl.start, end: decl.end}
+										});
+									var fName = decl.file.substring(decl.file.lastIndexOf('/')+1);
+									message += '*    ['+fName+ '](' + href + ') - '+displayFileName(decl)+'\n'; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+								}
+							}, this);
+							display.stayOnTarget = true;
+							display.Message = message;
+							return deferred.reject(display);
+						} else if (typeof response.declaration.start  === 'number' && typeof response.declaration.end === 'number') {
+							var opts = Object.create(null);
+							opts.start = response.declaration.start;
+							opts.end = response.declaration.end;
+							if(this.openMode !== null && typeof this.openMode !== 'undefined') {
+								opts.mode = this.openMode;
+							}
+							return deferred.resolve(editorContext.openEditor(response.declaration.file, opts));
+						} else if (response.declaration.origin) {
+							deferred.reject({Severity: 'Warning', Message: i18nUtil.formatMessage(Messages['declFoundInIndex'], response.declaration.origin)}); //$NON-NLS-1$
+						}
+					}
+					deferred.reject({Severity: 'Warning', Message: Messages['noDeclFound']}); //$NON-NLS-1$
+				}.bind(this));
 		}
 	});
-	
+
 	return {
 		OpenDeclarationCommand : OpenDeclarationCommand
 	};

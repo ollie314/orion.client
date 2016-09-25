@@ -30,7 +30,8 @@ define(["i18n!orion/mixloginstatic/nls/messages", "orion/xhr", "orion/webui/litt
 			xhr("PUT", jsonData.Location, { //$NON-NLS-0$
 				data: JSON.stringify(jsonData),
 				headers: {
-					"Orion-Version": "1"
+					"Orion-Version": "1",
+					"Content-Type": "application/json;charset=utf-8"
 				},
 				timeout: 15000
 			}).then(function(xhrResult) {
@@ -69,7 +70,9 @@ define(["i18n!orion/mixloginstatic/nls/messages", "orion/xhr", "orion/webui/litt
 				thead.appendChild(tr);
 				var td = document.createElement("td"); //$NON-NLS-0$
 				td.classList.add("navColumn"); //$NON-NLS-0$
-				td.innerHTML = "<h2>External Id</h2>"; //$NON-NLS-0$
+				var h2 = document.createElement("h2"); //$NON-NLS-0$
+				h2.textContent = "External Id"; //$NON-NLS-1$
+				td.appendChild(h2);
 				tr.appendChild(td);
 			}
 
@@ -102,7 +105,7 @@ define(["i18n!orion/mixloginstatic/nls/messages", "orion/xhr", "orion/webui/litt
 		var removeLink = document.createElement("a"); //$NON-NLS-0$
 		removeLink.classList.add("removeExternalId"); //$NON-NLS-0$
 		removeLink.id = "remlink" + i; //$NON-NLS-0$
-		removeLink.innerHTML = "Remove";
+		removeLink.textContent = "Remove";
 		removeLink.style.visibility = "hidden"; //$NON-NLS-0$
 		removeLink.title = "Remove " + externalId;
 		td.appendChild(removeLink);
@@ -152,7 +155,8 @@ define(["i18n!orion/mixloginstatic/nls/messages", "orion/xhr", "orion/webui/litt
 		xhr("PUT", jsonData.Location, { //$NON-NLS-0$
 			data: JSON.stringify(jsonData),
 			headers: {
-				"Orion-Version": "1"
+				"Orion-Version": "1",
+				"Content-Type": "application/json;charset=utf-8"
 			},
 			timeout: 15000
 		}).then(function(xhrResult) {
@@ -164,20 +168,22 @@ define(["i18n!orion/mixloginstatic/nls/messages", "orion/xhr", "orion/webui/litt
 
 	function confirmOAuth(oauth) {
 		if (oauth !== "" && oauth !== null) {
-			window.open("../mixlogin/manageoauth/oauth?oauth=" + encodeURIComponent(oauth), "oauth_popup", "width=790,height=580");
+			window.open("../mixlogin/manageoauth/oauth/" + oauth + "?oauth=" + encodeURIComponent(oauth), "oauth_popup", "width=790,height=580");
 		}
 	}
 
 	function createProviderLink(name, imageUrl, clazz, onclick) {
 		var img = document.createElement("img");
 		img.className = "loginWindow " + clazz;
-		img.id = img.alt = img.title = name;
+		img.alt = img.title = name;
 		img.src = imageUrl;
 
 		var a = document.createElement("a");
 		a.className = "loginWindow " + clazz;
 		a.onclick = onclick;
-		a.setAttribute("aria-labelledby", "addExternalAccount " + name);
+		a.id = name.replace(' ', ''); //$NON-NLS-1$
+		a.setAttribute("aria-label", name);
+		a.setAttribute("aria-labelledby", "addExternalAccount " + a.id);
 		a.appendChild(img);
 		return a;
 	}
@@ -188,7 +194,7 @@ define(["i18n!orion/mixloginstatic/nls/messages", "orion/xhr", "orion/webui/litt
 		h2.style.margin = "10px 5px 10px 0"; //$NON-NLS-0$
 		h2.style.cssFloat = "left";//$NON-NLS-0$
 		h2.id = "addExternalAccount";//$NON-NLS-0$
-		h2.innerHTML = messages["AddExternalAccount"];//$NON-NLS-0$
+		h2.textContent = messages["AddExternalAccount"];//$NON-NLS-0$
 		externalIdContainer.appendChild(h2);
 	}
 

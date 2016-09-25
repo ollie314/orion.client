@@ -10,8 +10,8 @@
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
 /*eslint-env browser, amd*/
-define(["orion/Deferred", "orion/commands", "orion/contentTypes", "orion/URITemplate", "orion/i18nUtil", "orion/PageLinks", "i18n!orion/edit/nls/messages", "orion/URL-shim"],
-	function(Deferred, mCommands, mContentTypes, URITemplate, i18nUtil, PageLinks, messages){
+define(["orion/Deferred", "orion/commands", 	'orion/PageUtil', "orion/contentTypes", "orion/URITemplate", "orion/i18nUtil", "orion/PageLinks", "i18n!orion/edit/nls/messages", "orion/URL-shim"],
+	function(Deferred, mCommands, PageUtil, mContentTypes, URITemplate, i18nUtil, PageLinks, messages){
 
 	/**
 	 * Utility methods
@@ -32,7 +32,7 @@ define(["orion/Deferred", "orion/commands", "orion/contentTypes", "orion/URITemp
 	    var temp = item.constructor(); // changed
 	
 	    for(var key in item){
-			if(key!=="children" && key!=="Children") { //$NON-NLS-1$ //$NON-NLS-0$
+			if(key!=="children" && key!=="Children" && key!=="parent" && key!=="Project") { //$NON-NLS-1$ //$NON-NLS-0$
 				temp[key] = clone(item[key]);
 			}
 	    }
@@ -436,7 +436,25 @@ define(["orion/Deferred", "orion/commands", "orion/contentTypes", "orion/URITemp
 				if (validator.generatesURI.bind(validator)()) {
 					commandOptions.hrefCallback = function(data){
 						var item = Array.isArray(data.items) ? data.items[0] : data.items;
-						return validator.getURI.bind(validator)(item);
+						var href = validator.getURI.bind(validator)(item);
+						if (data.command && data.command.isEditor) {
+							data.domNode.addEventListener("click", function(evt) {
+								if(item.Location) {
+									var resourceParam = PageUtil.matchResourceParameters();
+									if(resourceParam.resource !== item.Location) {
+										data.domNode.target = "_blank";
+										return;
+									}
+									var cmdHrefParam = PageUtil.matchResourceParameters(href);
+									if(cmdHrefParam && cmdHrefParam.editor === resourceParam.editor) {
+										data.domNode.target = "_blank";
+										return;
+									}
+								}
+								data.domNode.target = "";
+							});
+						}
+						return href;
 					};
 				} else {
 					var inf = info;
@@ -485,8 +503,11 @@ define(["orion/Deferred", "orion/commands", "orion/contentTypes", "orion/URITemp
 			isEditor: info.isEditor,
 			showGlobally: info.showGlobally
 		};
+		// Quickfixes for annotations are handled via commands, this option enable quickfixes to apply to all annotations
+		if (info.fixAllEnabled){
+			commandOptions.fixAllEnabled = true;
+		}
 		enhanceCommandOptions(commandOptions, deferred);
-		
 		return deferred;
 	};
 

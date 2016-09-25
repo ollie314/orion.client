@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2013 IBM Corporation and others.
+ * Copyright (c) 2013, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -52,14 +52,19 @@ define({//Default message bundle
 	"password:": "Password:",
 	"Cancelled": "Cancelled",
 	"Could not find the launch configuration manifest": "Could not find the launch configuration manifest nor use the top-level project manifest. Please restore it or provide a project manifest.",
+	"CouldNotFindManifestInProvidedPath" : "Could not find manifest in provided path. The launch configuration will use default values.",
+	"hostNamesCannotHaveUnderscore" : "Hostnames cannot have an underscore",
 	"Would you like to use the top-level project manifest": "Could not find the launch configuration manifest. Would you like to use the top-level project manifest instead and bind it to the launch configuration?",
 	"iD:": "ID:",
 	"setUpYourCloud.Go": "Set up your Cloud. Go to [Settings](${0}).",
+	"service${0}NotFoundsetUpYourService.Go${1}" : "Service instance ${0} cannot be found in target space. Go to [Dashboard](${1}) and create the service.",
 	"loggingInTo${0}...": "Logging in to ${0}...",
+	"disablePopUp" : "Please disable your pop-up blocker and refresh the page",
 	"submit": "Submit",
 	"cloudApplications": "Cloud Applications",
 	"loggingInToCloudFoundry": "Logging in to Cloud Foundry",
 	"checkingForCloudFoundrySettings": "Checking for Cloud Foundry settings",
+	"region:": "Region:",
 	"organization:": "Organization:",
 	"space:": "Space:",
 	"applications": "Applications",
@@ -86,9 +91,14 @@ define({//Default message bundle
 	"logFiles": "Log Files",
 	"noResponse": "No response",
 	"gettingLogs": "Fetching logs. This may take a few minutes.  You can continue to work in other pages while we collect the logs.",
+	"launchConfDropdownLabel": "Launch Configuration:",
+	"scrollLock": "Scroll lock",
+	"scrollLockLabel": "Scroll Lock:",
+	"scrollLockTooltip": "Lock log scrolling",
+	"clearLogs": "Clear",
 	"loginTo": "Login to ",
 	"loggingInTo${0}": "Logging in to ${0}",
-	"thisPluginIntegratesWithCloud": "This plugin integrates with Cloud Foundry.",
+	"thisPluginIntegratesWithCloud": "This plug-in integrates with Cloud Foundry.",
 	"commandsForInteractingWithA": "Commands for interacting with a Cloud Foundry compatible target",
 	"targetNotSet": "Target not set",
 	"setOrDisplayTheTarget": "Set or display the target cloud, organization, and space",
@@ -210,4 +220,5 @@ define({//Default message bundle
 	"createNew": "Create New",
 	"manifestOverride": "Yellow boxes indicate modified fields, which will override manifest file settings.",
 	"noManifest": "No manifest found at /manifest.yml",
+	"refreshLogsPage": "[ Refresh the page to get the latest logs... ]"
 });

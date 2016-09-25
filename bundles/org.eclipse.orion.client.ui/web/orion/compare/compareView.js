@@ -19,12 +19,13 @@ define(['i18n!orion/compare/nls/messages',
         'orion/editor/editor',
         'orion/editor/editorFeatures',
         'orion/keyBinding',
+        'orion/editor/textTheme',
         'orion/editor/textView',
         'orion/compare/compareUIFactory',
         'orion/compare/compareUtils',
         'orion/compare/jsdiffAdapter',
         'orion/compare/diffTreeNavigator'],
-function(messages, Deferred, mEventTarget, lib, mDiffParser, mCompareRulers, mEditor, mEditorFeatures, mKeyBinding, mTextView,
+function(messages, Deferred, mEventTarget, lib, mDiffParser, mCompareRulers, mEditor, mEditorFeatures, mKeyBinding, mTextTheme, mTextView,
 		 mCompareUIFactory, mCompareUtils, mJSDiffAdapter, mDiffTreeNavigator,  mTextMateStyler, mHtmlGrammar, mTextStyler) {
 var exports = {};
 /**
@@ -86,7 +87,13 @@ exports.CompareView = (function() {
 					this.options.newFile.Content = output/*result.outPutFile*/;
 					this.options.diffArray = diffArray;
 				}
-				return {delim:delim , mapper:result.mapper, output: output/*result.outPutFile*/, diffArray:diffArray};
+				var returnObj = {delim:delim , mapper:result.mapper, output: output/*result.outPutFile*/, diffArray:diffArray};
+				if(result.deletedFileMode &&result.deletedFileMode==="160000"){
+					returnObj.submoduleChanged="removed";			
+				}else if(result.newFileMode  &&result.newFileMode==="160000"){
+					returnObj.submoduleChanged="added";	
+				}
+				return returnObj;
 			}
 		},
 		/** @private */
@@ -440,6 +447,7 @@ exports.TwoWayCompareView = (function() {
 			var view = new mTextView.TextView({
 				parent: parentDiv,
 				readonly: readonly,
+				theme: mTextTheme.TextTheme.getTheme("nothing"),
 				tabSize: 4
 			});
 			this._viewLoadedCounter++;
@@ -640,18 +648,53 @@ exports.TwoWayCompareView = (function() {
 		return leftViewHeight > rightViewHeight ? leftViewHeight : rightViewHeight;
 	};
 	
-	TwoWayCompareView.prototype.refreshTitle = function(editorIndex, dirty){	
+	TwoWayCompareView.prototype.refreshTitle = function(editorIndex, dirty){
+		var title1 = this.options.newFile.Name, title2 = this.options.oldFile.Name;
+		var separator = "/"; //$NON-NLS-0$
+		var ellipses = " ... "; //$NON-NLS-0$
+		var segments1 = title1.split(separator);
+		var segments2 = title2.split(separator);
+		var simplified1 = [];
+		var simplified2 = [];
+		var skipped = false, i;
+		for (i=0; i<Math.min(segments1.length - 1, segments2.length - 1); i++) {
+			if (segments1[i] !== segments2[i]) {
+				if (skipped) {
+					simplified1.push(ellipses);
+					simplified2.push(ellipses);
+				}
+				simplified1.push(segments1[i]);
+				simplified2.push(segments2[i]);
+				skipped = false;
+			} else {
+				skipped = true;
+			}
+		}
+		if (skipped) {
+			simplified1.push(ellipses);
+			simplified2.push(ellipses);
+		}
+		for (; i<Math.max(segments1.length, segments2.length); i++) {
+			if (i < segments1.length) {
+				simplified1.push(segments1[i]);
+			}
+			if (i < segments2.length) {
+				simplified2.push(segments2[i]);
+			}
+		}
+		title1 = simplified1.join(separator);
+		title2 = simplified2.join(separator);
 		if(editorIndex === 1){
 			var newFileTitleNode = this._uiFactory.getTitleDiv(true);
 			if(newFileTitleNode){
 				lib.empty(newFileTitleNode);
-				newFileTitleNode.appendChild(document.createTextNode(dirty || this._editors[editorIndex].isDirty() ? this.options.newFile.Name + "*" : this.options.newFile.Name)); //$NON-NLS-0$
+				newFileTitleNode.appendChild(document.createTextNode(dirty || this._editors[editorIndex].isDirty() ? title1 + "*" : title1)); //$NON-NLS-0$
 			}
 		} else {
 			var oldFileTitleNode = this._uiFactory.getTitleDiv(false);
 			if(oldFileTitleNode){
 				lib.empty(oldFileTitleNode);
-				oldFileTitleNode.appendChild(document.createTextNode(dirty || this._editors[editorIndex].isDirty() ? this.options.oldFile.Name + "*" : this.options.oldFile.Name)); //$NON-NLS-0$
+				oldFileTitleNode.appendChild(document.createTextNode(dirty || this._editors[editorIndex].isDirty() ? title2 + "*" : title2)); //$NON-NLS-0$
 			}
 		}
 	};
@@ -668,7 +711,9 @@ exports.TwoWayCompareView = (function() {
 			start = 0;
 		}
 		var gotoLineCallback = function() {
-			callback(lineNumber);
+			if(callback) {
+				callback(lineNumber);
+			}
 		}.bind(this);
 		this._editors[1].onGotoLine(lineNumber, start, end, gotoLineCallback);
 	};
@@ -681,9 +726,9 @@ exports.TwoWayCompareView = (function() {
 	/**
 	 * Convert the 0-based line number from logical to physical or vice versa. 
 	 * @param[int] lineNumber The 0 based line number to convert.
-	 * @param[boolean] reverse If false or not defined, convert from logical number to phsical number. Otherwie convert from physical to logical.
+	 * @param[boolean] reverse If false or not defined, convert from logical number to physical number. Otherwise convert from physical to logical.
 	 * 				   Physical number is the line number in the text editor, merged if any. Logical number is what shows in the ruler.
-	 * @returns {int} the converted number, 0-based. -1 means that the phical number can not be converted to a logical number, which means an empty number in the ruler.
+	 * @returns {int} the converted number, 0-based. -1 means that the physical number cannot be converted to a logical number, which means an empty number in the ruler.
 	 */
 	TwoWayCompareView.prototype.getLineNumber = function(lineNumber){
 		return lineNumber;
@@ -759,6 +804,7 @@ exports.InlineCompareView = (function() {
 			var textView = new mTextView.TextView({
 				parent: parentDiv,
 				readonly: true,
+				theme: mTextTheme.TextTheme.getTheme("nothing"),
 				tabSize: 4
 			});
 			return textView;
@@ -841,28 +887,39 @@ exports.InlineCompareView = (function() {
 			});
 		}
 		var result = this._generateMapper(generateMapper, this.options.oldFile.Content, this.options.newFile.Content, this.options.diffContent, this.options.hasConflicts, !this.options.toggler);
-		this._mapper = result.mapper;
-		this._textView.getModel().setText(this.options.oldFile.Content);
-		//Merge the text with diff 
-		var rFeeder = new mDiffTreeNavigator.inlineDiffBlockFeeder(result.mapper, 1);
-		var lFeeder = new mDiffTreeNavigator.inlineDiffBlockFeeder(result.mapper, 0);
-		mCompareUtils.mergeDiffBlocks(this._textView.getModel(), lFeeder.getDiffBlocks(), result.mapper, result.diffArray.array, result.diffArray.index, this._diffParser._lineDelimiter);
-		rFeeder.setModel(this._textView.getModel());
-		lFeeder.setModel(this._textView.getModel());
-		this._diffNavigator.initAll(this.options.charDiff ? "char" : "word", this._editor, this._editor, rFeeder, lFeeder, this._overviewRuler); //$NON-NLS-1$ //$NON-NLS-0$
-		
-		this._initSyntaxHighlighter([{fileName: this.options.oldFile.Name, contentType: this.options.oldFile.Type, editor: this._editor}]);
-		this._highlightSyntax();
-		if(this.options.commandProvider){
-			this.options.commandProvider.renderCommands(this);
+		if(result.submoduleChanged){
+			switch(result.submoduleChanged){
+				case "removed":
+					this._textView.getModel().setText(messages["Removed Submodule Message"]);
+					break;
+				case "added":
+					this._textView.getModel().setText(messages["Added Submodule Message"]);
+					break;
+			}
+		}else{
+			this._mapper = result.mapper;
+			this._textView.getModel().setText(this.options.oldFile.Content);
+			//Merge the text with diff 
+			var rFeeder = new mDiffTreeNavigator.inlineDiffBlockFeeder(result.mapper, 1);
+			var lFeeder = new mDiffTreeNavigator.inlineDiffBlockFeeder(result.mapper, 0);
+			mCompareUtils.mergeDiffBlocks(this._textView.getModel(), lFeeder.getDiffBlocks(), result.mapper, result.diffArray.array, result.diffArray.index, this._diffParser._lineDelimiter);
+			rFeeder.setModel(this._textView.getModel());
+			lFeeder.setModel(this._textView.getModel());
+			this._diffNavigator.initAll(this.options.charDiff ? "char" : "word", this._editor, this._editor, rFeeder, lFeeder, this._overviewRuler); //$NON-NLS-1$ //$NON-NLS-0$
+			
+			this._initSyntaxHighlighter([{fileName: this.options.oldFile.Name, contentType: this.options.oldFile.Type, editor: this._editor}]);
+			this._highlightSyntax();
+			if(this.options.commandProvider){
+				this.options.commandProvider.renderCommands(this);
+			}
+			this.removeRulers();
+			this.addRulers();
+			var drawLine = this._textView.getTopIndex() ;
+			this._textView.redrawLines(drawLine , drawLine+  1 , this._overviewRuler);
+			this._textView.redrawLines(drawLine , drawLine+  1 , this._rulerOrigin);
+			this._textView.redrawLines(drawLine , drawLine+  1 , this._rulerNew);
+			this._diffNavigator.gotoBlock(this.options.blockNumber-1, this.options.changeNumber-1);
 		}
-		this.removeRulers();
-		this.addRulers();
-		var drawLine = this._textView.getTopIndex() ;
-		this._textView.redrawLines(drawLine , drawLine+  1 , this._overviewRuler);
-		this._textView.redrawLines(drawLine , drawLine+  1 , this._rulerOrigin);
-		this._textView.redrawLines(drawLine , drawLine+  1 , this._rulerNew);
-		this._diffNavigator.gotoBlock(this.options.blockNumber-1, this.options.changeNumber-1);
 		return this._textView.getLineHeight() * this._textView.getModel().getLineCount() + 5;
 	};
 	
@@ -888,7 +945,9 @@ exports.InlineCompareView = (function() {
 		}
 		var mergedNumber = mCompareUtils.convertMergedLineNumber(this._mapper, lineNumber);
 		var gotoLineCallback = function() {
-			callback(mergedNumber);
+			if(callback) {
+				callback(mergedNumber);
+			}
 		}.bind(this);
 		this._editor.onGotoLine(mergedNumber, start, end, gotoLineCallback);
 	};
@@ -901,11 +960,11 @@ exports.InlineCompareView = (function() {
 	/**
 	 * Convert the 0-based line number from logical to physical or vice versa. 
 	 * @param[int] lineNumber The 0 based line number to convert.
-	 * @param[boolean] reverse If false or not defined, convert from logical number to phsical number. Otherwie convert from physical to logical.
+	 * @param[boolean] reverse If false or not defined, convert from logical number to physical number. Otherwise convert from physical to logical.
 	 * 				   Physical number is the line number in the text editor, merged if any. Logical number is what shows in the ruler.
-	 * @param[boolean] onOldFile If false or not defined, convert from logical number to phsical number on the new file. Otherwie convert o nthe old file.
+	 * @param[boolean] onOldFile If false or not defined, convert from logical number to physical number on the new file. Otherwise convert on the old file.
 	 * 				   Physical number is the line number in the text editor, merged if any. Logical number is what shows in the ruler.
-	 * @returns {int} the converted number, 0-based. -1 means that the phical number can not be converted to a logical number, which means an empty number in the ruler.
+	 * @returns {int} the converted number, 0-based. -1 means that the physical number cannot be converted to a logical number, which means an empty number in the ruler.
 	 */
 	InlineCompareView.prototype.getLineNumber = function(lineNumber, reverse, onOldFile){
 		if(reverse) {

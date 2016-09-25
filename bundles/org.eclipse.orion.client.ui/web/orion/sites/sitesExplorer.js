@@ -9,8 +9,8 @@
  * Contributors: IBM Corporation - initial API and implementation
  ******************************************************************************/
 /*eslint-env browser, amd*/
-define(['i18n!orion/sites/nls/messages', 'orion/explorers/explorer', 'orion/Deferred', 'orion/section', 'orion/sites/siteUtils', 'orion/sites/siteClient', 'orion/metrics', 'orion/webui/littlelib'],
-		function(messages, mExplorer, Deferred, mSection, mSiteUtils, mSiteClient, mMetrics, lib) {
+define(['i18n!orion/sites/nls/messages', 'orion/explorers/explorer', 'orion/Deferred', 'orion/section', 'orion/sites/siteUtils', 'orion/sites/siteClient', 'orion/metrics', 'orion/webui/littlelib', 'orion/bidiUtils'],
+		function(messages, mExplorer, Deferred, mSection, mSiteUtils, mSiteClient, mMetrics, lib, bidiUtils) {
 	var SiteServicesExplorer, SitesRenderer, SiteTreeModel;
 
 	/** 
@@ -247,11 +247,14 @@ define(['i18n!orion/sites/nls/messages', 'orion/explorers/explorer', 'orion/Defe
 			nameLink.href = href;
 			title.appendChild(nameLink);
 			
-			nameLink.appendChild(document.createTextNode(item.Name));
+			var itemName = item.Name;
+			if (bidiUtils.isBidiEnabled()) {
+				itemName = bidiUtils.enforceTextDirWithUcc(itemName);
+			}
+			nameLink.appendChild(document.createTextNode(itemName));
 			
 			var actionsArea = document.createElement("div"); //$NON-NLS-0$
 			actionsArea.className = "layoutRight sectionActions"; //$NON-NLS-0$
-			actionsArea.id = "siteActionsArea"; //$NON-NLS-0$
 			siteTitle.appendChild(actionsArea);
 			
 			this.commandService.renderCommands("DefaultActionWrapper", actionsArea, item, this.explorer, "button", this.explorer.getRefreshHandler()); //$NON-NLS-1$ //$NON-NLS-0$			

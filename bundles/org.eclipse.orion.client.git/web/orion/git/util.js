@@ -13,6 +13,7 @@
 /**
  * Utility methods that do not have UI dependencies.
  */
+/*globals URL */
 define([
 	'i18n!git/nls/gitmessages',
 	'orion/i18nUtil',
@@ -122,7 +123,7 @@ define([
 	
 	function _generateSignedOffBy(name, email) {
 		if (name && email) {
-			return "\nSigned-off-by: " + name + " <" + email + ">";
+			return "\n\nSigned-off-by: " + name + " <" + email + ">";
 		}
 	}
 	
@@ -154,17 +155,30 @@ define([
 	}
 	
 	function shortenRefName(ref) {
-		var refName = ref.Name;
+		if (ref.Detached) {
+			return i18nUtil.formatMessage(messages['DetachedHead ${0}'], shortenString(ref.HeadSHA));
+		}
+		var result = ref.Name;
 		if (ref.Type === "StashCommit") { //$NON-NLS-0$
-			refName = i18nUtil.formatMessage(messages["stashIndex"], ref.parent.children.indexOf(ref), refName.substring(0, 6)); //$NON-NLS-0$
+			result = i18nUtil.formatMessage(messages["stashIndex"], ref.parent.children.indexOf(ref), shortenString(result)); //$NON-NLS-0$
 		}
 		if (ref.Type === "Commit") { //$NON-NLS-0$
-			refName = refName.substring(0, 6);
+			result = shortenString(result);
 		}
 		if (ref.Type === "RemoteTrackingBranch" && !ref.Id) { //$NON-NLS-0$
-			refName += messages[" [New branch]"];
+			result += messages[" [New branch]"];
 		}
-		return refName;
+		return result;
+	}
+	
+	function shortenString(str) {
+		return str.substring(0, 6);
+	}
+	
+	function sameRef(ref1, ref2) {
+		if (!ref1 || !ref2) return false;
+		if (ref1 === ref2) return true;
+		return ref1.Name === ref2.Name && ref1.Type === ref2.Type;
 	}
 	
 	function shortenPath(path) {
@@ -202,7 +216,35 @@ define([
 		return branch && branch.RemoteLocation && branch.RemoteLocation[0] && !isNewBranch(branch.RemoteLocation[0].Children[0]);
 	}
 	
+	function isSafe(item) {
+		if (!item) return false;
+		var state = (item.status && item.status.RepositoryState) || item.RepositoryState;
+		return state && state === "SAFE"; //$NON-NLS-0$
+	}
+	
+	function isMerging(item) {
+		if (!item) return false;
+		var state = (item.status && item.status.RepositoryState) || item.RepositoryState;
+		return state && state.indexOf("MERGING") === 0; //$NON-NLS-0$
+	}
+	
+	function isRebasing(item) {
+		if (!item) return false;
+		var state = (item.status && item.status.RepositoryState) || item.RepositoryState;
+		return state && state.indexOf("REBASING") === 0; //$NON-NLS-0$
+	}
+	
+	function isCherryPicking(item) {
+		if (!item) return false;
+		var state = (item.status && item.status.RepositoryState) || item.RepositoryState;
+		return state && state.indexOf("CHERRY_PICKING") === 0; //$NON-NLS-0$
+	}
+	
 	return {
+		isSafe: isSafe,
+		isRebasing: isRebasing,
+		isMerging: isMerging,
+		isCherryPicking: isCherryPicking,
 		isStaged: isStaged,
 		isUnstaged: isUnstaged,
 		isChange: isChange,
@@ -214,8 +256,10 @@ define([
 		parseSshGitUrl: parseSshGitUrl,
 		trimCommitMessage: trimCommitMessage,
 		changeSignedOffByCommitMessage: changeSignedOffByCommitMessage,
+		sameRef: sameRef,
 		shortenRefName: shortenRefName,
 		shortenPath: shortenPath,
+		shortenString : shortenString,
 		relativePath: relativePath,
 		getGerritFooter: getGerritFooter
 	};

@@ -12,11 +12,42 @@
  *******************************************************************************/
 /*eslint-env amd*/
 define([
-], function() {
+'htmlparser2/visitor'
+], function(Visitor) {
 
 	var Util = {
 		
 		punc: '\n\t\r (){}[]:;,.+=-*^&@!%~`\'\"\/\\',  //$NON-NLS-0$
+		
+		/**
+		 * Returns the ast node at the given offset or the parent node enclosing it
+		 * @param {Object} ast The AST to inspect
+		 * @param {Number} offset The offset into the source 
+		 * @returns {Object} The AST node at the given offset or null 
+		 * @since 10.0
+		 */
+		findNodeAtOffset: function(ast, offset) {
+			var found = null;
+			var dom = ast;
+			if (!Array.isArray(ast) && ast.children){
+				dom = ast.children;
+			}
+			 Visitor.visit(dom, {
+	            visitNode: function(node) {
+					if(node.range[0] <= offset) {
+						found = node;
+					} else {
+					    return Visitor.BREAK;
+					}      
+	            },
+	            endVisitNode: function(node) {
+	            	if(found && offset >= found.range[1] && offset > node.range[0]) {
+	            		found = node;
+	            	}
+	            }
+	        });
+	        return found;
+		},
 		
 		/**
 		 * @description Finds the word from the start position
@@ -47,13 +78,10 @@ define([
 				}
 				if((s === start || (ispunc && (s === start-1))) && pos === start) {
 					return null;
-				}
-				else if(s === start) {
+				} else if(s === start) {
 					return text.substring(s, pos);
 				}
-				else {
-					return text.substring(s+1, pos);
-				}
+				return text.substring(s+1, pos);
 			}
 			return null;
 		},
@@ -68,7 +96,7 @@ define([
 		 * @returns {Object} The token that starts at the given start offset
 		 */
 		findToken: function(offset, tokens) {
-			if(offset != null && offset > -1 && tokens && tokens.length > 0) {
+			if(offset !== null && offset > -1 && tokens && tokens.length > 0) {
 				var min = 0,
 					max = tokens.length-1,
 					token, 
@@ -133,13 +161,13 @@ define([
 			var blocks = [];
 			var val = null, regex = /<\s*style(?:type\s*=\s*"([^"]*)"|[^>]|\n)*>((?:.|\r?\n)*?)<\s*\/style(?:[^>]|\n)*>/ig;
 			var comments = this.findHtmlCommentBlocks(buffer, offset);
-			loop: while((val = regex.exec(buffer)) != null) {
+			loop: while((val = regex.exec(buffer)) !== null) {
 				var text = val[2];
 				if(text.length < 1) {
 					continue;
 				}
 				var index = val.index+val[0].indexOf('>')+1;  //$NON-NLS-0$
-				if((offset == null || (index <= offset && index+text.length >= offset))) {
+				if(typeof offset !== 'number' || (index <= offset && index+text.length >= offset)) {
 					for(var i = 0; i < comments.length; i++) {
 						if(comments[i].start <= index && comments[i].end >= index) {
 							continue loop;
@@ -166,12 +194,12 @@ define([
 		findHtmlCommentBlocks: function(buffer, offset) {
 			var blocks = [];
 			var val = null, regex = /<!--((?:.|\r?\n)*?)-->/ig;
-			while((val = regex.exec(buffer)) != null) {
+			while((val = regex.exec(buffer)) !== null) {
 				var text = val[1];
 				if(text.length < 1) {
 					continue;
 				}
-				if((offset == null || (val.index <= offset && val.index+text.length >= val.index))) {
+				if(typeof offset !== 'number' || (val.index <= offset && val.index+text.length >= val.index)) {
 					blocks.push({
 						text: text,
 						start: val.index,

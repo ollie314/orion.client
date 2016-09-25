@@ -40,7 +40,7 @@ eclipse.GitService = (function() {
 		checkGitService : function() {
 		},
 		
-		cloneGitRepository : function(gitName, gitRepoUrl, targetPath, repoLocation, gitSshUsername, gitSshPassword, gitSshKnownHost, privateKey, passphrase, userInfo, initProject) {
+		cloneGitRepository : function(gitName, gitRepoUrl, targetPath, repoLocation, gitSshUsername, gitSshPassword, gitSshKnownHost, privateKey, passphrase, userInfo, initProject, cloneSubmodules) {
 			var service = this;
 			var postData = {};
 			if(gitName){
@@ -79,6 +79,9 @@ eclipse.GitService = (function() {
 			if(initProject){
 				postData.initProject = initProject;
 			}
+			if(typeof cloneSubmodules !== "undefined"){
+				postData.cloneSubmodules = cloneSubmodules;
+			}
 			//NOTE: require.toURL needs special logic here to handle "gitapi/clone"
 			var gitapiCloneUrl = require.toUrl("gitapi/clone/._"); //$NON-NLS-0$
 			gitapiCloneUrl = gitapiCloneUrl.substring(0,gitapiCloneUrl.length-2);
@@ -90,7 +93,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify(postData)
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
@@ -101,6 +103,8 @@ eclipse.GitService = (function() {
 			return clientDeferred;
 		},
 		
+		
+
 		removeGitRepository : function(repositoryLocation){
 			var service = this;
 			
@@ -110,8 +114,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -120,6 +123,7 @@ eclipse.GitService = (function() {
 			
 			return clientDeferred;
 		},
+
 	
 		getGitStatus: function(url){
 			var service = this;
@@ -130,8 +134,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -141,6 +144,29 @@ eclipse.GitService = (function() {
 			return clientDeferred;
 		},
 		
+		getGitBlame: function(url) {
+			var service = this;
+			var clientDeferred = new Deferred();
+	
+			xhr("GET", url, { //$NON-NLS-1$
+				headers: {
+					"Orion-Version": "1", //$NON-NLS-1$ //$NON-NLS-0$
+						"Content-Type": "application/json; charset=UTF-8" //$NON-NLS-1$ //$NON-NLS-0$
+				},
+				timeout: 15000
+			}).then(
+
+			function(result) {
+				service._getGitServiceResponse(clientDeferred, result);
+			},
+
+			function(error) {
+				service._handleGitServiceResponseError(clientDeferred, error);
+			});
+
+			return clientDeferred;
+		},
+
 		stage: function(location){
 			var service = this;
 			
@@ -150,8 +176,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -171,7 +196,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Path" : paths //$NON-NLS-0$
 				})
@@ -194,7 +218,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Reset" : resetParam //$NON-NLS-0$
 				})
@@ -217,7 +240,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$,
 				data: JSON.stringify({
 					"Path" : paths //$NON-NLS-0$
 				})
@@ -240,7 +262,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Path" : paths, //$NON-NLS-0$
 					"RemoveUntracked" : "true" //$NON-NLS-1$ //$NON-NLS-0$
@@ -264,7 +285,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Path" : paths, //$NON-NLS-0$
 				})
@@ -287,7 +307,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: body
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
@@ -307,8 +326,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -327,8 +345,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -347,8 +364,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -367,8 +383,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -388,7 +403,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Branch" : branchName //$NON-NLS-0$
 				})
@@ -411,7 +425,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Commit" : refId, //$NON-NLS-0$
 					"Reset" : mode ? mode : "HARD" //$NON-NLS-1$ //$NON-NLS-0$
@@ -439,7 +452,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify(postData)
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
@@ -459,8 +471,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -470,7 +481,7 @@ eclipse.GitService = (function() {
 			return clientDeferred;
 		},
 		
-		addRemote : function(gitRemoteParentURI, remoteName, remoteURI) {
+		addRemote : function(gitRemoteParentURI, remoteName, remoteURI, isGerrit) {
 			var service = this;
 			
 			var clientDeferred = new Deferred();
@@ -480,10 +491,10 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Remote" : remoteName, //$NON-NLS-0$
-					"RemoteURI" : remoteURI //$NON-NLS-0$
+					"RemoteURI" : remoteURI, //$NON-NLS-0$
+					"IsGerrit" : isGerrit //$NON-NLS-0$
 				})
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
@@ -503,8 +514,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -523,8 +533,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -544,7 +553,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"New" : commitName //$NON-NLS-0$
 				})
@@ -566,8 +574,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -587,7 +594,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Fetch" : "true", //$NON-NLS-1$ //$NON-NLS-0$
 					"Force" : force, //$NON-NLS-0$
@@ -616,7 +622,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Pull" : "true", //$NON-NLS-1$ //$NON-NLS-0$
 					"Force" : force, //$NON-NLS-0$
@@ -645,7 +650,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Merge" : commitName, //$NON-NLS-0$
 					"Squash" : squash
@@ -669,7 +673,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Cherry-Pick" : commitName //$NON-NLS-0$
 				})
@@ -692,7 +695,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Revert" : commitName //$NON-NLS-0$
 				})
@@ -718,7 +720,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify(postData)
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
@@ -739,7 +740,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"PushSrcRef" : srcRef, //$NON-NLS-0$
 					"PushTags" : tags, //$NON-NLS-0$
@@ -770,12 +770,22 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"New" : commitName //$NON-NLS-0$
 				})
 			}).then(function(result) {
-				clientDeferred1.resolve(result.xhr.getResponseHeader("Location")); //TODO bug 367344 //$NON-NLS-0$
+				var logLocation = null;
+				//Bug 464972. We should use response instead of result.xhr.getResponseHeader. The result.xhr.getResponseHeader converts the non-english characters in the response, into "???"
+				if(result.response && typeof result.response === "string") {
+					var resonseObj = JSON.parse(result.response);
+					if(resonseObj.Location) {
+						logLocation = resonseObj.Location;	
+					} 
+				}
+				if(!logLocation) {
+					logLocation = result.xhr.getResponseHeader("Location");
+				}
+				clientDeferred1.resolve(logLocation);
 			}, function(error){
 				service._handleGitServiceResponseError(clientDeferred, error);
 			});
@@ -786,8 +796,7 @@ eclipse.GitService = (function() {
 						"Orion-Version" : "1",
 						"Content-Type" : contentType
 					},
-					timeout : GIT_TIMEOUT,
-					handleAs : "json" //$NON-NLS-0$
+					timeout : GIT_TIMEOUT
 				}).then(function(result) {
 					service._getGitServiceResponse(clientDeferred, result);
 				}, function(error){
@@ -808,8 +817,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred1, result);
 			}, function(error){
@@ -822,8 +830,7 @@ eclipse.GitService = (function() {
 						"Orion-Version" : "1",
 						"Content-Type" : contentType
 					},
-					timeout : GIT_TIMEOUT,
-					handleAs : "json" //$NON-NLS-0$
+					timeout : GIT_TIMEOUT
 				}).then(function(result) {
 					service._getGitServiceResponse(clientDeferred, result);
 				}, function(error){
@@ -834,7 +841,7 @@ eclipse.GitService = (function() {
 			return clientDeferred;
 		},
 		
-		doAddTag : function(gitCommitURI, tagName) {
+		doAddTag : function(gitCommitURI, tagName, isAnnotated, message) {
 			var service = this;
 			
 			var clientDeferred = new Deferred();
@@ -844,9 +851,10 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
-					"Name" : tagName  //$NON-NLS-0$
+					"Name" : tagName,  //$NON-NLS-0$
+					"Annotated" : isAnnotated,
+					"Message" : message || ""
 				})
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
@@ -866,8 +874,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -887,7 +894,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Tag" : tag, //$NON-NLS-0$
 					"Branch" : branchName //$NON-NLS-0$
@@ -929,7 +935,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify(payload)
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
@@ -954,8 +959,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -979,8 +983,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -1004,8 +1007,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -1029,8 +1031,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -1050,7 +1051,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Key" : newKey, //$NON-NLS-0$
 					"Value" : newValue //$NON-NLS-0$
@@ -1074,7 +1074,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"Value" : newValue //$NON-NLS-0$
 				})
@@ -1096,8 +1095,7 @@ eclipse.GitService = (function() {
 					"Orion-Version" : "1",
 					"Content-Type" : contentType
 				},
-				timeout : GIT_TIMEOUT,
-				handleAs : "json" //$NON-NLS-0$
+				timeout : GIT_TIMEOUT
 			}).then(function(result) {
 				service._getGitServiceResponse(clientDeferred, result);
 			}, function(error){
@@ -1117,7 +1115,6 @@ eclipse.GitService = (function() {
 					"Content-Type" : contentType
 				},
 				timeout : GIT_TIMEOUT,
-				handleAs : "json", //$NON-NLS-0$
 				data: JSON.stringify({
 					"ReviewReqCommit": commit,
 					"ReviewReqUrl" : url, //$NON-NLS-0$
@@ -1133,6 +1130,135 @@ eclipse.GitService = (function() {
 			
 			return clientDeferred;
 		},
+		
+		updateSubmodules : function(submoduleLocation){
+			var service = this;
+			var postData = {};
+			postData.Operation = "update";
+			var clientDeferred = new Deferred();
+			xhr("PUT", submoduleLocation, { 
+				headers : { 
+					"Orion-Version" : "1",
+					"Content-Type" : contentType
+				},
+				timeout : GIT_TIMEOUT,
+				data:JSON.stringify(postData)
+			}).then(function(result) {
+				service._getGitServiceResponse(clientDeferred, result);
+			}, function(error){
+				service._handleGitServiceResponseError(clientDeferred, error);
+			});
+			
+			return clientDeferred;
+		},
+		
+		syncSubmodules : function(submoduleLocation){
+			var service = this;
+			var postData = {};
+			postData.Operation = "sync";//$NON-NLS-0$
+			var clientDeferred = new Deferred();
+			xhr("PUT", submoduleLocation, { 
+				headers : { 
+					"Orion-Version" : "1",
+					"Content-Type" : contentType
+				},
+				timeout : GIT_TIMEOUT,
+				data:JSON.stringify(postData)
+			}).then(function(result) {
+				service._getGitServiceResponse(clientDeferred, result);
+			}, function(error){
+				service._handleGitServiceResponseError(clientDeferred, error);
+			});
+			
+			return clientDeferred;
+		},
+		
+		addSubmodule : function(gitName, submoduleLocation,targetPath, gitUrl, repoLocation){
+			var service = this;
+			var postData = {};
+			if(gitName){
+				postData.Name = gitName;
+			}
+			if(targetPath){
+				postData.Path = targetPath;
+			}
+			if(gitUrl){
+				postData.GitUrl=gitUrl;
+			}
+			postData.Location = repoLocation;
+			var clientDeferred = new Deferred();
+			xhr("POST", submoduleLocation, { 
+				headers : { 
+					"Orion-Version" : "1",
+					"Content-Type" : contentType
+				},
+				timeout : GIT_TIMEOUT,
+				data:JSON.stringify(postData)
+			}).then(function(result) {
+				service._getGitServiceResponse(clientDeferred, result);
+			}, function(error){
+				service._handleGitServiceResponseError(clientDeferred, error);
+			});
+			
+			return clientDeferred;
+		},
+		
+		deleteSubmodule : function(submoduleLocation, parents){
+			var service = this;
+			var clientDeferred = new Deferred();
+			xhr("DELETE", submoduleLocation, { 
+				headers : { 
+					"Orion-Version" : "1",
+					"Content-Type" : contentType
+				},
+				timeout : GIT_TIMEOUT
+			}).then(function(result) {
+				service._getGitServiceResponse(clientDeferred, result);
+			}, function(error){
+				service._handleGitServiceResponseError(clientDeferred, error);
+			});
+			
+			return clientDeferred;
+		},
+		
+		doPullRequestList : function(pullRequestLocation, gitRepoUrl, gitSshUsername, gitSshPassword, gitSshKnownHost, privateKey, passphrase) {
+			var service = this;
+			var postData = {};
+			if(gitRepoUrl){
+				postData.GitUrl=gitRepoUrl;
+			}
+			if(gitSshUsername){
+				postData.GitSshUsername = gitSshUsername;
+			}
+			if(gitSshPassword){
+				postData.GitSshPassword = gitSshPassword;
+			}
+			if(gitSshKnownHost){
+				postData.GitSshKnownHost = gitSshKnownHost;
+			}
+			if(privateKey) {
+				postData.GitSshPrivateKey=privateKey;
+			}
+			if(passphrase) {
+				postData.GitSshPassphrase=passphrase;
+			}
+			var clientDeferred = new Deferred();
+			xhr("POST", pullRequestLocation, { 
+				headers : { 
+					"Orion-Version" : "1",
+					"Content-Type" : contentType
+				},
+				timeout : GIT_TIMEOUT,
+				data: JSON.stringify(postData)
+			}).then(function(result) {
+				service._getGitServiceResponse(clientDeferred, result);
+			}, function(error){
+				service._handleGitServiceResponseError(clientDeferred, error);
+			});
+
+			return clientDeferred;
+		},
+		
 
 		_getGitServiceResponse : function(deferred, result) {
 			var response =  result.response ? JSON.parse(result.response) : null;

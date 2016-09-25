@@ -10,12 +10,11 @@
  ******************************************************************************/
 /*eslint-env browser, amd*/
 /*global URL*/
-define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(lib, PageUtil) {
+define(['i18n!orion/nls/messages', 'orion/webui/littlelib', 'orion/PageUtil', 'orion/webui/tooltip', 'orion/URL-shim'], function(messages, lib, PageUtil, mTooltip) {
 	var LOCAL_STORAGE_NAME = "sideMenuNavigation";
 	var OPEN_STATE = "open";
 	var CLOSED_STATE = "closed";
 	var DEFAULT_STATE = OPEN_STATE;
-	var SIDE_MENU_OPEN_WIDTH = "50px";
 	var TRANSITION_DURATION_MS = 301; /* this should always be greater than the duration of the left transition of .content-fixedHeight */
 
 	function SideMenu(parentNode, contentNode) {
@@ -109,7 +108,11 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 						return true;
 					}
 				}, this);
-
+				
+				var sideMenuHome = document.createElement("div"); //$NON-NLS-0$
+				sideMenuHome.classList.add("sideMenuHome"); //$NON-NLS-0$
+				this._sideMenuHome = sideMenuHome;
+				
 				var sideMenuList = document.createElement("ul"); //$NON-NLS-0$
 				sideMenuList.classList.add("sideMenuList"); //$NON-NLS-0$
 				this._sideMenuList = sideMenuList;
@@ -137,6 +140,12 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 					}
 					listItem.appendChild(anchor);
 					sideMenuList.appendChild(listItem);
+					anchor.setAttribute("aria-label", listItem.categoryName);
+					anchor.commandTooltip = new mTooltip.Tooltip({
+						node: anchor,
+						text: listItem.categoryName,
+						position: ["above", "below", "right", "left"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+					});
 					this._categorizedAnchors[categoryInfo.id] = anchor;
 				}, this);
 				
@@ -185,6 +194,8 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 
 				this._updateCategoryAnchors();
 				this._show = function() {
+					this._parentNode.setAttribute("aria-label", messages.sidebar); //$NON-NLS-1$
+					this._parentNode.appendChild(sideMenuHome);
 					this._parentNode.appendChild(this._topScrollButton);
 					this._parentNode.appendChild(sideMenuList);
 					this._parentNode.appendChild(this._bottomScrollButton);
@@ -201,13 +212,13 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 			}
 
 			if (this._state === CLOSED_STATE) {
-				this._contentNode.style.left = "0"; //$NON-NLS-0$
+				this._contentNode.classList.add("content-sideMenu-closed"); //$NON-NLS-0$
 				if (this._renderTimeout) {
 					window.clearTimeout(this._renderTimeout);
 					this._renderTimeout = null;
 				}
 				this._renderTimeout = window.setTimeout(function() {
-					this._parentNode.style.display = 'none'; //$NON-NLS-0$
+					this._parentNode.classList.add("sideMenu-closed"); //$NON-NLS-0$
 					this._renderTimeout = null;
 				}.bind(this), TRANSITION_DURATION_MS);
 				this._parentNode.classList.add("animating"); //$NON-NLS-0$
@@ -217,9 +228,8 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 					this._renderTimeout = null;
 				}
 				this._parentNode.classList.remove("animating"); //$NON-NLS-0$
-				this._parentNode.style.display = 'block'; //$NON-NLS-0$
-				this._parentNode.style.width = SIDE_MENU_OPEN_WIDTH;
-				this._contentNode.style.left = SIDE_MENU_OPEN_WIDTH;
+				this._parentNode.classList.remove("sideMenu-closed"); //$NON-NLS-0$
+				this._contentNode.classList.remove("content-sideMenu-closed"); //$NON-NLS-0$
 			}
 		},
 		_updateScrollButtonVisibility: function() {
@@ -255,7 +265,8 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 		},
 		hide: function() {
 			localStorage.setItem(LOCAL_STORAGE_NAME, CLOSED_STATE);
-			this._contentNode.style.left = "0"; //$NON-NLS-0$
+			this._parentNode.classList.add("sideMenu-closed"); //$NON-NLS-0$
+			this._contentNode.classList.add("content-sideMenu-closed"); //$NON-NLS-0$
 		},
 		toggle: function() {
 			// add animation if necessary
@@ -295,7 +306,6 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 					anchor.onclick = function() {
 						return false;
 					};
-					anchor.title = anchor.parentElement.categoryName;
 					return;
 				}
 
@@ -307,7 +317,6 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 				}
 				if (links.length === 0 || (scmInScope.length !== 0 && (category === "git" || category.match(/-scm$/)) && scmInScope.indexOf(category) === -1)) {
 					anchor.href = "";
-					anchor.title = anchor.parentElement.categoryName;
 					anchor.parentElement.style.display = "none";
 				} else {
 					anchor.parentElement.style.display = "";
@@ -321,7 +330,6 @@ define(['orion/webui/littlelib', 'orion/PageUtil', 'orion/URL-shim'], function(l
 					});
 					var bestLink = links.shift();
 					anchor.href = bestLink.href;
-					anchor.title = bestLink.title;
 				}
 			}, this);
 			this._show();

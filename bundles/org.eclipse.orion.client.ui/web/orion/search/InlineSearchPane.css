@@ -5,12 +5,98 @@
 @import "../widgets/input/ComboTextInput.css";
 
 .searchResultsWrapperDiv .treeTableRow > td {
-	padding: 0 3px;
 	overflow: hidden;
 }
 
+.searchResultsWrapperDiv .confidenceDecorator {
+	display: inline-block;
+	width: 32px;
+	vertical-align: middle;
+	border: none;
+}
+
+.searchResultsWrapperDiv .confidenceDecoratorImg {
+	display: inline-block;
+	width: 16px;
+	vertical-align: middle;
+	font-size: 12px;
+	border: none;
+}
+
+.searchResultsWrapperDiv .confidenceHighImg {
+	color: green;
+	padding-bottom: 2px;
+	padding-top: 1PX;
+}
+
+.searchPageActions .togglePerfectMatch {
+	border: 1px solid lightgray;
+	border-radius: 3px;
+}
+
+.searchPageActions .core-sprite-checkmark {
+	color: green !important;
+    line-height: 18px;
+    padding-right: 2px;
+    padding-left: 2px;
+    padding-top: 2px;
+    font-size: 13px;
+}
+
+.searchResultsWrapperDiv .confidenceUnknownImg {
+	color: blue;
+	margin-top: -2px;
+}
+
+.searchPageActions .togglePossibleMatch {
+	border: 1px solid lightgray;
+	border-radius: 3px;
+	margin-left: -3px !important;
+}
+
+.searchPageActions .core-sprite-questionmark {
+	color: blue !important;
+    line-height: 18px;
+    padding-right: 6px;
+    padding-left: 6px;
+    padding-top: 2px;
+    font-size: 14px;
+}
+
+.searchResultsWrapperDiv .confidenceLowImg {
+	color: red;
+	padding-right: 1px;
+	padding-bottom: 2px;
+	padding-top: 1px;
+}
+
+.searchPageActions .toggleNonMatch {
+	border: 1px solid lightgray;
+	border-radius: 3px;
+	margin-left: -3px !important;
+}
+
+.searchPageActions .core-sprite-error {
+	color: red !important;
+    line-height: 18px;
+    padding-right: 2px;
+    padding-left: 2px;
+    padding-top: 2px;
+    font-size: 13px;
+}
+
+.searchResultsWrapperDiv .confidenceHigh {
+	color: white !important;
+	background-color: #1BB199 !important;
+}
+
+.searchResultsWrapperDiv .confidenceLow {
+	color: white !important;
+	background-color: #d9534f !important;
+}
+
 .searchResultsWrapperDiv .selectableNavRow:hover {
-	background-color: #cedce7;
+	background-color: rgba(27, 177, 153, 0.3);
 }
 
 .searchResultsWrapperDiv .navlink {
@@ -30,41 +116,50 @@
 	width: 100%;
 }
 
-
 .searchOptWrapperDiv {
-	height: 224px;
 	transition: height 0.2s ease;
 }
 
 .replaceModeActive > .searchOptWrapperDiv {
-	height: 262px;
 }
 
 .searchWrapper.searchOptionsHidden > .searchOptWrapperDiv {
 	height: 0;
 	overflow: hidden;
+	visibility: hidden;
+}
+
+.searchWrapper.searchOptParamBlockHidden > .searchOptWrapperDiv > .searchParamBlockDiv {
+	display: none;
+}
+
+.searchWrapper.searchOptParamBlockHidden > .searchResultsWrapperDiv{
+	height: calc(100% - 124px);
+}
+
+.searchWrapper.searchOptParamBlockHidden > .searchOptWrapperDiv > .searchMainOptionBlock > .toggleDisplayLink{
+	display: none;
 }
 
 .searchResultsWrapperDiv {
-	height: calc(100% - 220px - 54px); /* subtract height of search options*/
+	height: calc(100% - 220px - 46px); /* subtract height of search options*/
 	transition: height 0.2s ease; /* avoid extra scroll bar while switching between search and replace modes */
 	width: 100%;
+	overflow: auto;
 }
 
 .searchResultsWrapperDiv > div {
-	border-top: 1px solid lightgray;
 	height: 100%;
-	overflow: auto;
 	width: 100%;
 }
 
 .searchResultsWrapperDiv > div > .treetable {
 	background: white;
-	table-layout: fixed;
 }
 
 .searchWrapper.searchOptionsHidden > .searchResultsWrapperDiv{
 	height: calc(100% - 70px);
+	overflow: auto;
 }
 
 .replaceModeActive > .searchResultsWrapperDiv {
@@ -136,6 +231,10 @@
 	margin: 5px 10px 0 10px;
 }
 
+.searchMainOptionBlock input[type="text"]:disabled {
+    background: white;
+}
+
 .searchOptionBlock {
 	margin: 15px 10px;
 	min-width: 254px;
@@ -166,7 +265,7 @@
 }
 
 .searchCheckbox {
-	margin: 0 0 0 5px;
+	margin: 4px 0 0 5px;
 	vertical-align: middle;
 }
 
@@ -238,7 +337,7 @@
 	display: inline-flex;
 	display: -webkit-inline-flex;		/* Safari */
 	outline: none;
-	padding: 0 2px;
+	padding: 3px 0;
 	vertical-align: middle;
 	white-space: nowrap;
 	width: 100%;
@@ -262,7 +361,7 @@
 	-webkit-flex-shrink: 2;		/* Safari */
 	font-size: 8pt; 
 	font-weight: normal;
-	overflow: hidden;
+	/*overflow: hidden;*/
 	text-overflow: ellipsis;
 }
 
@@ -281,6 +380,13 @@
 	margin-right: 5px;
 }
 
+.fileLineSpan {
+	color: black;
+	display: inline-block;
+	font-style: italic;
+	font-size: 8pt;
+}
+
 .fileParentSpan {
 	color: #666 !important;
 	flex-grow: 0;
@@ -289,6 +395,28 @@
 	-webkit-flex-shrink: 0;		/* Safari */
 	font-size: 8pt; 
 	font-weight: normal;
+}
+
+.groupParentSpan {
+	color: #333 !important;
+	flex-grow: 0;
+	flex-shrink: 0;
+	-webkit-flex-grow: 0;		/* Safari */
+	-webkit-flex-shrink: 0;		/* Safari */
+	font-size: 9pt; 
+}
+
+.groupNameSpan {
+	font-weight: bold;
+	padding-top: 2px;
+    display: inline-block;
+}
+
+.groupCountSpan {
+	font-weight: bold;
+	padding-top: 2px;
+	padding-left: 5px;
+    display: inline-block;
 }
 
 .ellipsisSpan {
@@ -315,7 +443,6 @@
 }
 
 .searchDetailRow {
-	background: white !important;
 }
 
 .navlink.searchDetailLink {
@@ -359,11 +486,10 @@
 	display: none;
 	font-size: 8pt;
 	font-weight: bold;
-	height: 20px;
-	left: 1px;
+	left: 0px;
 	padding: 3px 10px;
 	position: absolute;
-	top: -19px;
+	top: 1px;
 	z-index: 1;
 }
 
@@ -373,6 +499,7 @@
 
 .replaceCompareDiv {
 	display: none;
+	top: 20px;
 	z-index: 51;
 }
 
@@ -400,6 +527,10 @@
 	white-space: nowrap;
 }
 
+.searchPageActionsRight {
+	padding-right: 5px;
+}
+
 .searchPageActions > .orionButton > .core-sprite-move-down, .searchPageActions > .orionButton > .core-sprite-move-up {
 	padding-left: 0;
 }
@@ -420,7 +551,6 @@
 
 .searchPageActions > .orionSwitch {
 	display: inline-block;
-	margin-bottom: 1px;
 	vertical-align: bottom;
 }
 

@@ -24,7 +24,7 @@ define({//Default message bundle
 	"RenameFilesFolders": "Rename the selected files or folders",
 	"CompareEach": "Compare with each other",
 	"Compare 2 files": "Compare the selected 2 files with each other",
-	"Compare with...": "Compare with...",
+	"Compare with...": "Compare With...",
 	"CompareFolders": "Compare the selected folder with a specified folder",
 	"Delete": "Delete",
 	"Unknown item": "Unknown item",
@@ -34,6 +34,10 @@ define({//Default message bundle
 	"ZipDL": "Create a zip file of the folder contents and download it",
 	"New File": "File",
 	"Create a new file": "Create a new file",
+	"FailedToCreateProject":"Failed to create project: ${0}",
+	"FailedToCreateFile": "Failed to create file: ${0}",
+	"CopyFailed": "Copy operation failed",
+	"MoveFailed": "Move operation failed",
 	"Name:": "Name:",
 	"New Folder": "Folder",
 	"Folder name:": "Folder name:",
@@ -63,7 +67,7 @@ define({//Default message bundle
 	"GoUpToParent": "Move up to the parent folder",
 	"Go Into": "Go Into",
 	"GoSelectedFolder": "Move into the selected folder",
-	"File or zip archive": "File or zip archive",
+	"File or zip archive": "File or Zip Archive",
 	"ImportLcFile": "Import a file or zip archive from your local file system",
 	"SFTP from...": "SFTP",
 	"CpyFrmSftp": "Copy files and folders from a specified SFTP connection",
@@ -91,6 +95,7 @@ define({//Default message bundle
 	"File": "File",
 	"Actions": "Actions",
 	"Orion Content": "Orion Content",
+	"File System": "File System",
 	"Create new content": "Create new content",
 	"Import from HTTP...": "HTTP",
 	"File URL:": "File URL:",
@@ -127,13 +132,13 @@ define({//Default message bundle
 	"checkApplicationState": "Check application state",
 	"stop": "Stop",
 	"start": "Start",
-	"stopApplication": "Stop the application",
+	"stopApplication": "Stop the App",
 	"startApplication": "Start the application",
 	"manage": "Manage",
 	"manageThisApplicationOnRemote": "Manage this application on remote server",
 	"deleteLaunchConfiguration": "Delete this launch configuration",
 	"editLaunchConfiguration": "Edit this launch configuration",
-	"deployThisApplication": "Deploy the application using the workspace contents",
+	"deployThisApplication": "Deploy the App from the Workspace",
 	"associatedFolder": "Associated Folder",
 	"associateAFolderFromThe": "Associate a folder from the workspace with this project.",
 	"convertToProject": "Convert to project",
@@ -145,7 +150,7 @@ define({//Default message bundle
 	"createAProjectFromAn": "Create a project from an SFTP site.",
 	'readMeCommandName': 'Readme File',  //$NON-NLS-0$  //$NON-NLS-1$
 	'readMeCommandTooltip': 'Create a README.md file in this project',  //$NON-NLS-0$  //$NON-NLS-1$
-	'zipArchiveCommandName': 'Zip archive',  //$NON-NLS-0$  //$NON-NLS-1$
+	'zipArchiveCommandName': 'Zip Archive',  //$NON-NLS-0$  //$NON-NLS-1$
 	'zipArchiveCommandTooltip': 'Create a project from a local zip archive.',  //$NON-NLS-0$  //$NON-NLS-1$
 	'Url:': 'Url:',  //$NON-NLS-0$  //$NON-NLS-1$
 	'notZip' : 'The following files are not zip files: ${0}. Would you like to continue the import?', //$NON-NLS-0$  //$NON-NLS-1$

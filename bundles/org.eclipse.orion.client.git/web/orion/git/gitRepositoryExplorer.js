@@ -104,6 +104,7 @@ define([
 			case "rebase": //$NON-NLS-0$
 			case "merge": //$NON-NLS-0$
 			case "mergeSquash": //$NON-NLS-0$
+			case "cherrypick": //$NON-NLS-0$
 				if (event.failed || event.rebaseAction) {
 					that.changedItem();
 				}
@@ -114,9 +115,59 @@ define([
 				}
 				that.changedItem();
 				break;
+				
+			case "pullRequestCheckout": //$NON-NLS-0$
+				if(event.pullRequest){
+					var base = event.pullRequest.PullRequest.base;
+					var elementPos = that.branchesNavigator.model.root.children.map(function(x) {return x.Type; }).indexOf("Remote");
+					if(elementPos>-1){
+						var remote = that.branchesNavigator.model.root.children[elementPos];
+						if(remote.children){
+							var basePos = remote.children.map(function(x) {return x.Name; }).indexOf("origin/"+base.ref);
+							if(basePos>-1){
+								that.reference = remote.children[basePos];
+							}
+
+						}else{
+							that.branchesNavigator.model.getChildren(remote,function(children){
+								var basePos = children.map(function(x) {return x.Name; }).indexOf("origin/"+base.ref);
+								if(basePos>-1){
+									that.reference = children[basePos];
+								}								
+							})
+						}
+						
+					}
+				}
+				
+				if (that.repository) {
+					window.location.href = require.toUrl(repoTemplate.expand({resource: that.lastResource = that.repository.Location}));
+				}
+				that.changedItem();
+
+				break;
+			case "deleteSubmodule": //$NON-NLS-0$
 			case "removeClone": //$NON-NLS-0$
-				if (that.repository && event.items.some(function(repo) { return repo.Location === that.repository.Location; })) {
+				function submoduleSelected(repo) {
+					var parentSelected = repo.Location === that.repository.Location;
+					if(!parentSelected && repo.Parents){
+						parentSelected = repo.Parents.some(function(parentrepo) {return parentrepo === that.repository.Location;});
+					}
+					var childSelected = false;
+					if (repo.Children) {
+						childSelected = repo.Children.some(function(childrepo) {return submoduleSelected(childrepo);});
+					}
+
+					return parentSelected || childSelected;
+				}
+				if (that.repository && event.items.some(submoduleSelected)) {
 					window.location.href = require.toUrl(repoTemplate.expand({resource: that.lastResource = ""}));
+					that.changedItem();
+				}
+				break;
+			case "addSubmodule": //$NON-NLS-0$
+			case "addClone": //$NON-NLS-0$
+				if(!that.repository){
 					that.changedItem();
 				}
 				break;
@@ -151,7 +202,7 @@ define([
 		}
 		this.statusService.setProgressResult(display);
 		
-		if (error.status === 404) {
+		if (error.status === 404 || error.status === 410) {
 			this.initTitleBar();
 			this.displayRepositories();
 		}
@@ -264,7 +315,7 @@ define([
 	};
 
 	GitRepositoryExplorer.prototype.destroy = function() {
-		lib.empty(lib.node('sidebar')); //$NON-NLS-0$
+		lib.empty(lib.node("pageSidebar")); //$NON-NLS-0$
 		lib.empty(lib.node('table')); //$NON-NLS-0$
 		this.destroyRepositories();
 		this.destroyBranches();
@@ -283,9 +334,7 @@ define([
 			that.repository = repository;
 			that.initTitleBar(repository || {});
 			if (repository) {
-				that.preferencesService.getPreferences("/git/settings").then(function(prefs) {  //$NON-NLS-0$
-					prefs.put("lastRepo", {Location: that.repository.Location});  //$NON-NLS-0$
-				});
+				that.preferencesService.put("/git/settings", {lastRepo: {Location: that.repository.Location}}); //$NON-NLS-1$
 				that.repositoriesNavigator.select(that.repository);
 				that.repositoriesSection.setTitle(repository.Name);
 				that.displayBranches(repository); 
@@ -298,8 +347,8 @@ define([
 		};
 	
 		if (!repository && this.repositoriesNavigator && this.repositoriesNavigator.model) {
-			this.preferencesService.getPreferences("/git/settings").then(function(prefs) {  //$NON-NLS-0$
-				var lastRepo = prefs.get("lastRepo"); //$NON-NLS-0$
+			this.preferencesService.get("/git/settings").then(function(prefs) {  //$NON-NLS-0$
+				var lastRepo = prefs["lastRepo"]; //$NON-NLS-0$
 				if (lastRepo) {
 					that.repositoriesNavigator.model.repositories.some(function(repo){
 						if (repo.Location === lastRepo.Location) {
@@ -347,7 +396,7 @@ define([
 			return;
 		}
 		this.statusDeferred = this.displayStatus(this.repository).then(function() {
-			if (changes.length === 0) {
+			if (changes.length === 0 && !this.repository.status.promise) {
 				this.changes = [this.repository.status];
 			}
 		}.bind(this));
@@ -403,13 +452,12 @@ define([
 	
 	GitRepositoryExplorer.prototype.initTitleBar = function(resource) {
 		var item = {};
-		var task = messages.Repo;
 		var repository = resource;
 		item.Name = messages["Git"];
 		item.Parents = [];
 		mGitCommands.updateNavTools(this.registry, this.commandService, this, "pageActions", "selectionTools", this.repository, this.pageNavId); //$NON-NLS-1$ //$NON-NLS-0$
 		mGlobalCommands.setPageTarget({
-			task: task,
+			task: messages["Git"],
 			target: repository,
 			breadcrumbTarget: item,
 			makeBreadcrumbLink: function(seg, location) {
@@ -421,7 +469,7 @@ define([
 	};
 	
 	GitRepositoryExplorer.prototype.createLabel = function(parent, str, sibling) {
-		var label = document.createElement("div"); //$NON-NLS-0$
+		var label = document.createElement("label"); //$NON-NLS-0$
 		label.className = "gitSectionLabel"; //$NON-NLS-0$
 		label.textContent = str;
 		if (sibling) {
@@ -435,12 +483,16 @@ define([
 	GitRepositoryExplorer.prototype.displayRepositories = function(location, mode, links) {
 		this.destroyRepositories();
 		var parent = lib.node('pageToolbar'); //$NON-NLS-0$
+		var sibling = lib.node('pageActions'); //$NON-NLS-0$
 		
-		this.repositoriesLabel = this.createLabel(parent, messages["Repository:"]);
+		var id = "repoSection"; //$NON-NLS-0$
+		this.repositoriesLabel = this.createLabel(parent, messages["Repository:"], sibling);
+		this.repositoriesLabel.id = id + "Label"; //$NON-NLS-0$
 		
 		var section = this.repositoriesSection = new mSection.Section(parent, {
-			id: "repoSection", //$NON-NLS-0$
+			id: id, //$NON-NLS-0$
 			title: messages["Repo"],
+			sibling: sibling,
 //			iconClass: ["gitImageSprite", "git-sprite-repository"], //$NON-NLS-1$ //$NON-NLS-0$
 			slideout: true,
 			content: '<div id="repositoryNode" class="repoDropdownList"></div><div id="dropdownRepositoryActionsNode" class="sectionDropdownActions toolComposite"></div>', //$NON-NLS-0$
@@ -450,6 +502,7 @@ define([
 			noTwistie: true,
 			preferenceService: this.preferencesService
 		});
+		section.getHeaderElement().setAttribute("aria-labelledby", id + "Label " + id + "Title"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 		
 		var selection = this.repositoriesSelection = new mSelection.Selection(this.registry, "orion.selection.repo"); //$NON-NLS-0$
 		selection.addEventListener("selectionChanged", function(e) { //$NON-NLS-0$
@@ -483,20 +536,22 @@ define([
 			mode: mode,
 			showLinks: links,
 		});
-		return explorer.display().then(function() {
-			this.loadingDeferred.resolve();
-		}.bind(this), this.loadingDeferred.reject);
+		return explorer.display();
 	};
 	
 	GitRepositoryExplorer.prototype.displayBranches = function(repository) {
 		this.destroyBranches();
 		var parent = lib.node('pageToolbar'); //$NON-NLS-0$
+		var sibling = lib.node('pageActions'); //$NON-NLS-0$
 		
-		this.branchesLabel = this.createLabel(parent, messages["Reference:"]);
+		var id = "branchSection"; //$NON-NLS-0$
+		this.branchesLabel = this.createLabel(parent, messages["Reference:"], sibling);
+		this.branchesLabel.id = id + "Label"; //$NON-NLS-0$
 		
 		var section = this.branchesSection = new mSection.Section(parent, {
-			id: "branchSection", //$NON-NLS-0$
+			id: id, //$NON-NLS-0$
 			title: this.previousBranchTitle || "\u00A0", //$NON-NLS-0$
+			sibling: sibling,
 //			iconClass: ["gitImageSprite", "git-sprite-branch"], //$NON-NLS-1$ //$NON-NLS-0$
 			slideout: true,
 			content: '<div id="branchNode" class="branchDropdownList"></div><div id="dropdownBranchesActionsNode" class="sectionDropdownActions toolComposite"></div>', //$NON-NLS-0$
@@ -506,6 +561,7 @@ define([
 			noTwistie: true,
 			preferenceService: this.preferencesService
 		});
+		section.getHeaderElement().setAttribute("aria-labelledby", id + "Label " + id + "Title"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 
 		var selection = this.branchesSelection = new mSelection.Selection(this.registry, "orion.selection.ref"); //$NON-NLS-0$
 		selection.addEventListener("selectionChanged", function(e) { //$NON-NLS-0$
@@ -521,7 +577,7 @@ define([
 							break;
 						case "Remote": //$NON-NLS-0$
 							var activeBranch = this.commitsNavigator.model.getActiveBranch();
-							if (!activeBranch) return;
+							if (!activeBranch || activeBranch.Detached) return;
 							var newBranch;
 							for (var i = 0; i < activeBranch.RemoteLocation.length; i++) {
 								if (selected.Location === activeBranch.RemoteLocation[i].Location) {
@@ -530,7 +586,7 @@ define([
 									break;
 								}
 							}
-							if (util.isNewBranch(newBranch)) {
+							if (newBranch) {
 								selected = newBranch;
 								break;
 							}
@@ -582,13 +638,12 @@ define([
 		if (!explorer) return;
 		var activeBranch = explorer.model.getActiveBranch();
 		var targetRef = explorer.model.getTargetReference();
-		if (activeBranch && targetRef) {
-			var targetName =  util.shortenRefName(targetRef);
-			title = activeBranch.Name + " => " + targetName;  //$NON-NLS-0$
+		if (activeBranch && targetRef && !util.sameRef(activeBranch, targetRef)) {
+			title = util.shortenRefName(activeBranch) + " => " + util.shortenRefName(targetRef);  //$NON-NLS-0$
 		} else if (!activeBranch && !targetRef) {
-			title = messages["NoActiveBranch"] + " => " + messages["NoRef"];  //$NON-NLS-0$
+			title = messages["NoActiveBranch"];
 		} else if (!activeBranch && targetRef) {
-			title = messages["NoActiveBranch"] + " => " +  util.shortenRefName(targetRef);  //$NON-NLS-0$
+			title = messages["NoActiveBranch"] + " => " + util.shortenRefName(targetRef);  //$NON-NLS-0$
 		} else {
 			title = util.shortenRefName(activeBranch || targetRef);
 		}
@@ -626,7 +681,7 @@ define([
 
 	GitRepositoryExplorer.prototype.displayCommits = function(repository) {	
 		this.destroyCommits();
-		var parent = lib.node('sidebar'); //$NON-NLS-0$
+		var parent = lib.node("pageSidebar"); //$NON-NLS-0$
 		var section = this.commitsSection = new mSection.Section(parent, {
 			id: "commitsSection", //$NON-NLS-0$
 			title: messages["Diffs"],
@@ -672,6 +727,7 @@ define([
 			targetRef: this.reference,
 			log: this.log,
 			simpleLog: !!this.log,
+			graph : false,
 			autoFetch: this.autoFetch === undefined || this.autoFetch,
 			handleError: this.handleError.bind(this),
 			root: {
@@ -693,8 +749,10 @@ define([
 				} else {
 					explorer.select(repository.status);
 				}
+
 				mMetrics.logPageLoadTiming("complete", window.location.pathname); //$NON-NLS-0$
-			}.bind(this));
+				this.loadingDeferred.resolve();
+			}.bind(this), this.loadingDeferred.reject);
 		}.bind(this));
 	};
 
@@ -733,7 +791,7 @@ define([
 	
 	GitRepositoryExplorer.prototype.displayConfig = function(repository, mode) {
 		this.destroyConfig();
-		var parent = lib.node('pageToolbar'); //$NON-NLS-0$
+		var parent = lib.node('settingsActions'); //$NON-NLS-0$
 		
 		var section = this.configSection = new mSection.Section(parent, {
 			id: "configSection", //$NON-NLS-0$
@@ -746,6 +804,7 @@ define([
 			dropdown: true,
 			noTwistie: true,
 			noArrow: true,
+			tooltip: messages["Configurations"],
 			preferenceService: this.preferencesService
 		});
 			

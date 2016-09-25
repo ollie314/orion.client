@@ -4,33 +4,15 @@
 	<meta charset="UTF-8">
 	<title>Orion JavaScript Support</title>
 	<script src="../../requirejs/require.js"></script>
-	<script type="text/javascript">
-		/*eslint-env amd*/
-		require({
-			baseUrl: "../../",
-			paths: {
-				text: "requirejs/text",
-				i18n: 'requirejs/i18n',
-				esprima: "esprima/esprima",
-				estraverse: "estraverse/estraverse",
-				escope: "escope/escope",
-				logger: "javascript/logger",
-				doctrine: 'doctrine/doctrine'
-			},
-			packages: [
-				{
-					name: "eslint/conf",
-					location: "eslint/conf"
-				},
-				{
-					name: "eslint",
-					location: "eslint/lib",
-					main: "eslint"
-				},
-			]
+	<script>
+		/*eslint-env browser, amd*/	
+		/* eslint-disable missing-nls */
+		require(["../../orion/require-config.js"], function(config){
+			require.config({
+				baseUrl: "../../"
+			});
+			require(["javascript/plugins/javascriptPlugin"], null, config.errback);
 		});
-
-		require(["javascript/plugins/javascriptPlugin"]);
 	</script>
 </head>
 <body>
@@ -45,35 +27,50 @@
 	<div style="width:50%">
         <h3>Third Party Libraries</h3>
         <table>
-            <tr>
-                <td>Doctrine 0.5.1</td>
-                <td><a href="https://github.com/Constellation/doctrine/blob/0.5.1/README.md">Readme</a></td>
-                <td><a href="https://github.com/Constellation/doctrine/blob/0.5.1/LICENSE.BSD">License</a></td>
+        	<tr>
+                <td>Acorn 3.1.0</td>
+                <td><a href="https://github.com/marijnh/acorn/blob/3.1.0/README.md">Readme</a></td>
+                <td><a href="https://github.com/marijnh/acorn/blob/3.1.0/LICENSE">License</a></td>
             </tr>
             <tr>
-                <td>ESLint 0.15.1</td>
-                <td><a href="https://github.com/eslint/eslint/blob/v0.15.1/README.md">Readme</a></td>
-                <td><a href="https://github.com/eslint/eslint/blob/v0.15.1/LICENSE">License</a></td>
+                <td>Doctrine 1.2.1</td>
+                <td><a href="https://github.com/eslint/doctrine/blob/v1.2.1/README.md">Readme</a></td>
+                <td><a href="https://github.com/eslint/doctrine/blob/v1.2.1/LICENSE.BSD">License</a></td>
             </tr>
             <tr>
-                <td>Eprima 2.0.0</td>
+                <td>ESLint 1.9.0</td>
+                <td><a href="https://github.com/eslint/eslint/blob/v1.9.0/README.md">Readme</a></td>
+                <td><a href="https://github.com/eslint/eslint/blob/v1.9.0/LICENSE">License</a></td>
+            </tr>
+            <tr>
+                <td>Esprima 2.0.0</td>
                 <td><a href="https://github.com/jquery/esprima/blob/2.0/README.md">Readme</a></td>
                 <td><a href="https://github.com/jquery/esprima/blob/2.0/LICENSE.BSD">License</a></td>
             </tr>
             <tr>
-                <td>EScope 1.0.0</td>
-                <td><a href="https://github.com/Constellation/escope/blob/1.0.0/README.md">Readme</a></td>
-                <td><a href="https://github.com/Constellation/escope/blob/1.0.0/LICENSE.BSD">License</a></td>
+                <td>ESRecurse 4.1.0</td>
+                <td><a href="https://github.com/estools/esrecurse/blob/4.1.0/README.md">Readme</a></td>
+                <td><a href="https://github.com/estools/esrecurse/blob/4.1.0/README.md#license">License</a></td>
             </tr>
             <tr>
-                <td>ESTraverse 1.9.0</td>
-                <td><a href="https://github.com/Constellation/estraverse/blob/1.9.0/README.md">Readme</a></td>
-                <td><a href="https://github.com/Constellation/estraverse/blob/1.9.0/LICENSE.BSD">License</a></td>
+            	<td>ESUtils 2.0.2</td>
+            	<td><a href="https://github.com/estools/esutils/tree/2.0.2/README.md">Readme</a></td>
+                <td><a href="https://github.com/estools/esutils/tree/2.0.2/README.md#license">License</a></td>
             </tr>
             <tr>
-                <td>Tern 0.6.2</td>
-                <td><a href="https://github.com/marijnh/tern/blob/0.6.2/README.md">Readme</a></td>
-                <td><a href="https://github.com/marijnh/tern/blob/0.6.2/LICENSE">License</a></td>
+                <td>EScope 2.0.4</td>
+                <td><a href="https://github.com/estools/escope/blob/2.0.4/README.md">Readme</a></td>
+                <td><a href="https://github.com/estools/escope/blob/2.0.4/LICENSE.BSD">License</a></td>
+            </tr>
+            <tr>
+                <td>ESTraverse 4.1.1</td>
+                <td><a href="https://github.com/Constellation/estraverse/blob/4.1.1/README.md">Readme</a></td>
+                <td><a href="https://github.com/Constellation/estraverse/blob/4.1.1/LICENSE.BSD">License</a></td>
+            </tr>
+            <tr>
+                <td>Tern 0.18.0</td>
+                <td><a href="https://github.com/marijnh/tern/blob/0.18.0/README.md">Readme</a></td>
+                <td><a href="https://github.com/marijnh/tern/blob/0.18.0/LICENSE">License</a></td>
             </tr>
         </table>
 	</div>

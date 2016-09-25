@@ -16,8 +16,8 @@
 (function() {
     try {
         var testURL;
-        if (typeof window.URL === "function" && window.URL.length !== 0 &&
-                (testURL = new window.URL("http://www.w3.org?q")).protocol === "http:" && testURL.query) {
+        if (typeof self.URL === "function" && self.URL.length !== 0 &&
+                (testURL = new self.URL("http://www.w3.org?q")).protocol === "http:" && testURL.query) {
             return;
         }
     } catch (e) {}
@@ -289,7 +289,9 @@
         var result = [];
         path.split("/").forEach(function(segment) {
             if (segment === "..") {
-                result.pop();
+            	if (result.length > 1) {
+                	result.pop();
+            	}
             } else if (segment !== ".") {
                 result.push(segment);
             }
@@ -412,6 +414,11 @@
     }
 
     Object.defineProperties(URL.prototype, {
+    	toString: {
+    		value: function() {
+    			return this.href;
+    		}		
+    	},
         href: {
             get: function() {
                 return this._url ? _serialize(this._url) : this._input;
@@ -623,7 +630,7 @@
         }
     });
 
-	var _URL = window.URL || window.webkitURL;
+	var _URL = self.URL || self.webkitURL;
     if (_URL && _URL.createObjectURL) {
         Object.defineProperty(URL, "createObjectURL", {
             value: _URL.createObjectURL.bind(_URL),
@@ -635,5 +642,5 @@
             enumerable: false
         });
     }
-    window.URL = URL;
+    self.URL = URL;
 }());

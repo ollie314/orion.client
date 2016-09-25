@@ -96,7 +96,7 @@ mBootstrap.startup().then(function(core) {
 	}
 	
 	function loadWorspace() {
-		return progress.progress(fileClient.loadWorkspace(mFileUtils.makeParentRelative("../file")), messages["Loading default workspace"]); //$NON-NLS-0$
+		return progress.progress(fileClient.loadWorkspace(), messages["Loading default workspace"]); //$NON-NLS-0$
 	}
 	
 	loadWorspace().then(function(workspace){
@@ -118,6 +118,11 @@ mBootstrap.startup().then(function(core) {
 	
 	// previously saved resource value
 	var previousResourceValue = params.resource;
+
+	/* For some reason, the page content scrolls to the left on IE11 even though overflow is set to hidden. */
+	document.getElementById("pageContent").addEventListener("scroll", function(evt) { //$NON-NLS-1$ //$NON-NLS-0$
+		evt.target.scrollLeft = evt.target.scrollTop = 0;
+	});
 	
 	window.addEventListener("hashchange", function() { //$NON-NLS-0$
 		// make sure to close all parameter collectors

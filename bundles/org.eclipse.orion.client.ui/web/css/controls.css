@@ -8,7 +8,7 @@
 }
 
 .navlink:hover {
-	color: #F58B0F;
+	color: #00AED1;
 }
 
 .navlink > span {
@@ -33,11 +33,34 @@
 .navlinkonpage:hover {
 	text-decoration: none;
 	border-bottom: 1px dotted;
-	color: #F58B0F;
+	color: #00AED1;
+}
+
+/* ----- side panel ----- */
+
+#auxpane .navlinkonpage, .nav_fakelink {
+	text-decoration: none;
+	padding-top: 2px;
+	padding-bottom: 2px;
+	color: inherit;
+}
+
+#auxpane .navlink {
+	display: inline-block;
+	padding: 2px;
+	color: inherit;
+	vertical-align: bottom;
+    line-height: 12px;
+	border-bottom: 1px solid transparent;
+}
+
+#auxpane .navlink:hover {
+	border-bottom: 1px dotted;
 }
 
 .dragOver {
-	background: #ffffd8;
+	color: white !important;
+	background: #1bb199;
 	outline: #AAA 2px dotted !important;
 }
 
@@ -50,6 +73,11 @@
 	margin-right:5px;
 }
 
+html[dir="rtl"] .logo { /* ACGC */
+	margin-left:5px;
+	margin-right:auto;
+}
+
 .toolbarTarget:focus{
 	outline:none;
 }
@@ -60,8 +88,9 @@
 }
 
 .pageActions {
-	min-height: 20px;
-	margin-top: 8px;
+	flex: 0 0 auto;
+	-ms-flex: 0 0 auto;
+	-webkit-flex: 0 0 auto;
 }
 
 .runBar {
@@ -70,13 +99,18 @@
 	display: -webkit-inline-flex !important;		 /* Safari */
 	display: inline-flex !important;
 	height: 100%;
+	flex: 0 0 auto;
+	-ms-flex: 0 0 auto;
+	-webkit-flex: 0 0 auto;
 }
 
 /* 4px margin used by toolbar, plus 4px of border/padding */
 .status {
-	padding-top: 10px;
-	color:#555;
+	color: white;
 	vertical-align: baseline;
+	flex: 0 0 auto;
+	-ms-flex: 0 0 auto;
+	-webkit-flex: 0 0 auto;
 }
 
 /* marker for finding section and main toolbars */
@@ -97,6 +131,10 @@
 	min-height: 30px;
 }
 
+html[dir="rtl"] .pageNavigationActions { /* ACGC */
+	text-align: left;
+}
+
 /* slideout styles */
 
 /* the left hand side of slideout containing parameter fields */
@@ -114,11 +152,15 @@
 	padding-bottom: 0;
 }
 
+html[dir="rtl"] .parametersDismiss { /* ACGC */
+	padding: 3px 3px 0px 0px;
+}
+
 /* buttons used to dismiss or complete a slideout */
 .dismissButton {
 	border: 1px solid transparent;
 	background: transparent;
-	color: #666;
+	color: white;
 	cursor: pointer;
     border-radius: 1px;
 	padding: 2px;
@@ -129,10 +171,25 @@
 	min-width: 16px;
 }
 
+.githubCloneAuth .dismissButton {
+	color: #1bb199;
+	margin-left: 0;
+}
+
+.githubCloneAuth .dismissButton:hover {
+	color: #1bb199;
+}
+
 .parametersDismiss .core-sprite-close {
 	margin-right: 0;
 	padding-right: 0;
 	padding-top: 0;
+}
+
+html[dir="rtl"] .parametersDismiss .core-sprite-close { /* ACGC */
+	margin-left: 0;
+	margin-right: auto;
+	padding-left: 0;
 }
 
 .cancelButton {
@@ -168,7 +225,7 @@
 }
 
 /* parameter labels */
-label.parameterInput{
+label.parameterInput {
 	color: #555;
 	white-space: nowrap;
 }
@@ -177,9 +234,15 @@ label.parameterInput{
 .parameterInput {
 	margin: 4px;
 	font-weight: normal;
-	vertical-align: baseline;
+	vertical-align: middle;
 	color:#333;
 	outline:none;
+}
+
+button.dismissButton.parameterInput {
+	color: whitesmoke;
+	margin-top: 3px;
+	margin-bottom: 3px;
 }
 
 .parameterInvalid {
@@ -236,7 +299,6 @@ textarea.parameterInput {
 }
 
 .selectableNavRow:hover {
-	background-color: #cedce7;
 }
 
 .disabledNavRow > .navColumn > .mainNavColumn {
@@ -254,7 +316,6 @@ textarea.parameterInput {
 
 .mainNavColumn {
 	display: inline-block;
-	padding: 2px;
 	vertical-align: baseline;
 	white-space: nowrap;
 }
@@ -272,6 +333,12 @@ textarea.parameterInput {
 	height: 24px;  /* breathing room */
 }
 
+html[dir="rtl"] .actionsColumn { /* ACGC */
+	text-align: left;
+	padding-right: 16px;
+	padding-left: 0px;
+}
+
 .selectionCheckmarkSprite {
 	display: inline-block; 
 	vertical-align: middle; 
@@ -285,6 +352,11 @@ textarea.parameterInput {
 	margin-left: 8px;
 	padding-right: 8px;
 	margin-right: 8px;
+}
+
+html[dir="rtl"] .modelDecorationSprite { /* ACGC */ 
+	padding-left: 8px;
+	padding-right: 0px;
 }
 
 .advancedSearchDecorationSprite { 
@@ -307,6 +379,11 @@ textarea.parameterInput {
 	vertical-align:bottom;
 }
 
+html[dir="rtl"] .thumbnail { /* ACGC */
+	padding-left: 8px;
+	padding-right: 0px;
+}
+
 /* less hit-area since we aren't worried about touch */
 @media all and (min-device-width: 1025px) {
 	.modelDecorationSprite { 	
@@ -315,6 +392,11 @@ textarea.parameterInput {
 		margin-left: 2px;
 		padding-right: 2px;
 		margin-right: 2px;
+	}
+	
+	html[dir="rtl"] .modelDecorationSprite {  /* ACGC */	
+		padding-left: 2px;
+		padding-right: 0px;
 	}
 	
 	.thumbnail {
@@ -326,11 +408,21 @@ textarea.parameterInput {
 		vertical-align:bottom;
 	}
 	
+	html[dir="rtl"] .thumbnail {  /* ACGC */	
+		padding-left: 2px;
+		padding-right: 0px;
+	}
+	
 	.selectionCheckmarkSprite { 	
 		padding: 0;
 		padding-left: 2px;
 		padding-right: 2px;
 		margin-right: 2px;
+	}
+	
+	html[dir="rtl"] .selectionCheckmarkSprite {  /* ACGC */	
+		padding-left: 2px;
+		padding-right: 0px;
 	}
 	
 	.checkColumn {
@@ -355,6 +447,11 @@ textarea.parameterInput {
 	padding-top: 2px;
     padding-bottom: 8px;
 }
+
+html[dir="rtl"] .auxPadding { /* ACGC */
+	padding-right: 8px;
+	padding-left: 0px;
+}
  
 .help {
 	font-weight: bold;
@@ -370,8 +467,17 @@ textarea.parameterInput {
 	padding: 0;
 }
 
+html[dir="rtl"] .footer { /* ACGC */
+	text-align: right;
+}
+
 .toolbarLabel {
 	padding-left: 8px;
+}
+
+html[dir="rtl"] .toolbarLabel { /* ACGC */
+	padding-right: 8px;
+	padding-left: 0px;
 }
 
 .slideContainer {
@@ -383,14 +489,18 @@ textarea.parameterInput {
 	display: none;
 	vertical-align: middle;
 	font-size: 11px;
-	z-index: 51;
+	z-index: 70;
 	color: #999;
 }
 
+html[dir="rtl"] .slideContainer { /* ACGC */
+	float: left;
+	margin-right: 4px;
+	margin-left: auto;
+}
+
 .slideParameters {
-	border: 1px solid #bbb;
-	background-color: lightgrey;
-	border-radius: 5px;
+	background-color: #5fc8b7;
 }
 
 .mainToolbar .slideContainer {
@@ -439,6 +549,11 @@ textarea.parameterInput {
 	margin-left: -20px;
 }
 
+html[dir="rtl"] .bannerMenuSearchOptions { /* ACGC */
+	margin-right: -20px;
+	margin-left: 0px;
+}
+
 .bannerButton {
 	border: 1px solid transparent;
 	text-align: center;
@@ -464,14 +579,19 @@ textarea.parameterInput {
 .keyAssistFloat {
 	color: white;
 	display: none;
-	background: rgba(51, 51, 51, 0.9);
+	background: rgba(55, 71, 79, 0.9);
 	position: fixed;
 	right: 44px;
-	top: 75px;
+	top: 80px;
 	min-width: 250px;
 	padding: 5px;
 	z-index:100;
 	border-radius: 4px;
+}
+
+html[dir="rtl"] .keyAssistFloat { /* ACGC */
+	left: 44px !important;
+	right: auto !important;
 }
 
 .keyAssistContents {
@@ -484,11 +604,24 @@ textarea.parameterInput {
 
 .keyAssistInput {
 	color: inherit;
-	background: #333;
+	background: #263238;
 	width: 100%;
 	margin: 0;
 	padding-left: 0;
 	padding-right: 0;
+}
+
+.keyAssistBindingInput {
+	font-size: 10pt;
+	font-weight: bold;
+	color: #efc100;
+	background: #263238;
+	border: none;
+	outline: none;
+	height: 100%;
+	text-align: right;
+	margin: 0;
+	padding: 0;
 }
 
 .keyAssistList {
@@ -500,36 +633,61 @@ textarea.parameterInput {
 .keyAssistItem {
 }
 
+.keyAssistItem.selected {
+	color: black;
+	background: rgba(255, 255, 255, 0.3);
+}
+
 .keyAssistItem:hover {
 	color: black;
 	background: rgba(255, 255, 255, 0.3);
 }
 
-.keyAssistFloat h2 {
-	color: gold;
+.keyAssistEditButton {
+	display: block;
+	visibility: hidden;
+	font-size: 13px !important;
+	color: white !important;
 }
 
-.keyAssistItem.selected {
-	color: black;
-	background: rgba(255, 255, 255, 0.6);
+.keyAssistEditButtonVisible {
+	visibility: visible;
+}
+
+.keyAssistActions {
+	border-top-right-radius: 4px;
+	border-bottom-right-radius: 4px;
+}
+
+.keyAssistItem:hover .keyAssistEditButton  {
+	visibility: visible;
+}
+
+.keyAssistSpacer {
+	width: 16px;
+	height: 14px;
+	border-top-left-radius: 4px;
+	border-bottom-left-radius: 4px;
+}
+
+.keyAssistFloat h2 {
+	color: gold;
+	margin: auto;
 }
 
 .keyAssistName {
 	text-align: left;
 	padding: 3px;
-	border-top-left-radius: 4px;
-	border-bottom-left-radius: 4px;
 }
 
 .keyAssistAccel {
 	/*font-family: Monaco;*/
 	font-size: 10pt;
 	font-weight: bold;
-	color: gold;
+	color: #efc100;
 	text-align: right;
 	padding: 3px;
-	border-top-right-radius: 4px;
-	border-bottom-right-radius: 4px;
+	min-width: 150px;
 }
 
 .inputCompletionContainer {
@@ -593,6 +751,11 @@ textarea.parameterInput {
 	overflow-x: hidden;
 }
 
+html[dir="rtl"] #tree { /* ACGC */
+	margin-left: 9em;
+	margin-right: auto;
+}
+
 #treeButtons br {
 	line-height: 0.5em;
 }
@@ -602,6 +765,10 @@ textarea.parameterInput {
 	padding: 0;
 	float: right;
 	width: 9em;
+}
+
+html[dir="rtl"] #treeButtons { /* ACGC */
+	float: left;
 }
 
 #treeButtons .contentButton {
@@ -643,6 +810,12 @@ textarea.parameterInput {
 	padding-right: 8px;
 	padding-top: 8px;
 	vertical-align:top;
+	white-space: nowrap;
+}
+
+html[dir="rtl"] .secondaryColumn { /* ACGC */
+	padding-left: 8px;
+	padding-right: 0px;
 }
 
 .secondaryColumnRight {
@@ -653,6 +826,12 @@ textarea.parameterInput {
 	text-align: right;
 }
 
+html[dir="rtl"] .secondaryColumnRight { /* ACGC */
+	padding-left: 8px;
+	padding-right: 0px;
+	text-align: left;
+}
+ 
 .secondaryColumnLeft {
 	color: #666666;	
 	padding-right: 8px;
@@ -660,6 +839,10 @@ textarea.parameterInput {
 	padding-top: 8px;
 	vertical-align:top;
 	text-align: left;
+}
+
+html[dir="rtl"] .secondaryColumnLeft { /* ACGC */
+	text-align: right;
 }
 
 .primaryColumn {
@@ -671,6 +854,11 @@ textarea.parameterInput {
 .checkColumn {
 	padding: 0;
 	padding-left:10px;
+}
+
+html[dir="rtl"] .checkColumn { /* ACGC */
+	padding-right:10px;
+	padding-left:0px;
 }
 
 .testNavTreetable {
@@ -689,12 +877,20 @@ textarea.parameterInput {
 	border-radius:4px;
 }
 
+.lightSectionTreeTableRow {
+	background-color: #FFFFFF;
+}
+
+.darkSectionTreeTableRow {
+	background-color: #f5f7f9;
+}
+
 .treeIterationCursorRow {
-	background-color: white;
+	background-color: rgba(27, 177, 153, 0.3);
 }
 
 .treeIterationCursorRow_Dotted {
-	background-color: white;
+	background-color: rgba(27, 177, 153, 0.3);
 }
 
 .searchCmdGroupMargin {
@@ -702,12 +898,27 @@ textarea.parameterInput {
 	margin-top: 2px;
 }
 
+html[dir="rtl"] .searchCmdGroupMargin { /* ACGC */
+	margin-right: 16px;
+	margin-left: auto;
+}
+
 .LoginWindowLeft {
 	padding-left: 0.5em;
 }
 
+html[dir="rtl"] .LoginWindowLeft { /* ACGC */
+	padding-right: 0.5em;
+	padding-left: 0em;
+}
+
 .LoginWindowRight {
 	padding-right: 0.5em;
+}
+
+html[dir="rtl"] .LoginWindowRight { /* ACGC */
+	padding-left: 0.5em;
+	padding-right: 0em;
 }
 
 .LoginWindowComment {
@@ -715,8 +926,17 @@ textarea.parameterInput {
 	padding-left: 15px;
 }
 
+html[dir="rtl"] .LoginWindowComment { /* ACGC */
+	padding-right: 15px;
+	padding-left: 0px;
+}
+
 #outline #switchOutlineMenu {
 	float: right;
+}
+
+html[dir="rtl"] #outline #switchOutlineMenu { /* ACGC */
+	float: left;
 }
 
 #outline #switchOutlineMenu .commandImage {
@@ -729,8 +949,18 @@ textarea.parameterInput {
 	margin: 4px 0 0 8px;
 }
 
+html[dir="rtl"] #outline>ul { /* ACGC */
+	padding-right: 0 !important;
+	margin: 4px 8px 0px 0px;
+}
+
 #outline ul {
 	padding-left: 14px;
+}
+
+html[dir="rtl"] #outline ul { /* ACGC */
+	padding-right: 14px;
+	padding-left: 0px;
 }
 
 #outline li {
@@ -796,6 +1026,11 @@ textarea.parameterInput {
     border-radius:1px;
 }
 
+html[dir="rtl"] .uploadChooser{ /* ACGC */
+	margin-left: 24px;
+	margin-right: auto;
+}
+
 .targetSelector{
 
 }
@@ -840,6 +1075,12 @@ textarea.parameterInput {
 	vertical-align: middle;
 }
 
+html[dir="rtl"] .local .setting-label { /* ACGC */
+	padding-right: 8px;
+	padding-left: 0px;
+	text-align: left;
+}
+
 .delegatedUI {
 	position: absolute; 
 	min-width: 250px;
@@ -863,7 +1104,7 @@ textarea.parameterInput {
 }
 
 .centralNavigation:hover{
-	color: #F58B0F;
+	color: #00AED1;
 }
 
 .navigationLabel{
@@ -873,6 +1114,11 @@ textarea.parameterInput {
 	padding-right: 3px;
 }
 
+html[dir="rtl"] .navigationLabel{ /* ACGC */
+	padding-left: 3px;
+	padding-right: 0px;
+}
+
 .groupedContentDivider{
 	float: left;
 	width: 1px;
@@ -880,6 +1126,12 @@ textarea.parameterInput {
 	margin-top: 10px;
 	margin-bottom: 10px;
 	border-left: dashed 1px #ddd;
+}
+
+html[dir="rtl"] .groupedContentDivider{ /* ACGC */
+	float: right;
+	border-right: dashed 1px #ddd;
+	border-left: 0px;
 }
 
 .navigationBreadcrumb{
@@ -894,6 +1146,11 @@ textarea.parameterInput {
 .modifiedFileMarker{
 	color:#333;
 	padding-left:5px;
+}
+
+html[dir="rtl"] .modifiedFileMarker{ /* ACGC */
+	padding-right:5px;
+	padding-left:0px;
 }
 
 .noFile {
@@ -912,21 +1169,21 @@ textarea.parameterInput {
 }
 
 .projectNavColumn {
-    color: #666;
+    color: #EEE;
     font-weight: bold;
 }
 
 .projectPrimaryNavColumn {
-	color: #000;
+	color: white;
 }
 
 .projectNavColumn a{
-	color: #555;
+	color: #EEE;
     font-weight: bold;
 }
 
 .projectPrimaryNavColumn a{
-	color: #555;
+	color: white;
     font-weight: bold;
 }
 
@@ -939,8 +1196,12 @@ textarea.parameterInput {
 	border-collapse: collapse;
 	border-spacing: 0;
 	padding: 0;
-	margin-top: 40px;
+	margin-top: 5px;
 	overflow-y: hidden; /* prevent vertical scrollbar from showing during expand/collapse */
+}
+
+html[dir="rtl"] .sectionWrapper, html[dir="rtl"] .sectionTable{ /* ACGC */
+	text-align: right;
 }
 
 .mainpane .sectionTable .treetable, .mainpane .sectionWrapper .treetable, .mainpane .sectionTable .treetable .actionsColumn{
@@ -956,12 +1217,9 @@ textarea.parameterInput {
 
 .sectionTable {
 	margin-top: 0;
-	margin-left: 8%;
-	margin-right: 8%;
-	border: 1px solid;
-	border-bottom-left-radius: 3px;
-	border-bottom-right-radius: 3px;
-	border-color:#dadada;
+	margin-left: 5px;
+	margin-right: 5px;
+	border: 1px solid #f1f3f4;
 	-webkit-transition: all 0.1s ease, left 0;
 	transition: all 0.1s ease, left 0;
 	-webkit-transform-origin: top;
@@ -975,7 +1233,7 @@ textarea.parameterInput {
 }
 
 .sectionTable:last-child {
-	margin-bottom: 20px;
+	margin-bottom: 5px;
 }
 
 .sectionTable.sectionClosed {
@@ -987,15 +1245,15 @@ textarea.parameterInput {
 
 .sectionWrapper{
 	border: 1px solid;
-	margin-left: 8%;
-	margin-right: 8%;
+	margin-left: 5px;
+	margin-right: 5px;
 	background: none repeat scroll 0 0 #f4f4f4;
 	vertical-align: middle;
 	font-weight: bold;
 	padding: 6px;
 	color: gray;
 	margin-bottom: 0;
-	border-color: #dadada;
+	border-color: #e3e7ea;
 	transition: all 0.1s ease;
 }
 
@@ -1012,7 +1270,7 @@ textarea.parameterInput {
 }
 
 .sectionTable td {
-	border-bottom: 1px solid #dadada;
+	border-bottom: 1px solid #f1f3f4;
 	vertical-align: middle;
 	color: gray;
 }
@@ -1039,7 +1297,7 @@ textarea.parameterInput {
 }
 
 .treeTableRow span.core-sprite-closedarrow:hover, .treeTableRow span.core-sprite-openarrow:hover {
-	color: #F58B0F;
+	color: #00AED1;
 }
 
 .searchOutlineContainer {
@@ -1112,6 +1370,11 @@ textarea.parameterInput {
 	background-color: inherit;
 }
 
+html[dir="rtl"] .orionProject .discreetInput { /* ACGC */
+	margin-right: 0;
+	margin-left: auto !important;
+}
+
 .orionProject .discreetInput:hover, .orionProject .discreetInput:focus {
 	border: 1px solid lightgrey;
 	color: black;
@@ -1154,14 +1417,6 @@ textarea.parameterInput {
 	background: none !important;
 }
 
-.lightSectionTreeTableRow {
-	background-color: #FFFFFF;
-}
-
-.darkSectionTreeTableRow {
-	background-color: #f5f7f9;
-}
-
 .lightTreeTableRow, .darkTreeTableRow {
 	border-bottom: 1px solid #dadada;
 }
@@ -1185,6 +1440,11 @@ textarea.parameterInput {
 	padding: 1px;
 	vertical-align: middle;
 	width: 100px;
+}
+
+html[dir="rtl"] .progressBarWrapper { /* ACGC */
+	margin-right: 5px;
+	margin-left: auto;
 }
 
 .uploadNode {
@@ -1215,8 +1475,12 @@ textarea.parameterInput {
 	vertical-align: middle;
 }
 
+html[dir="rtl"] .uploadNode .uploadCancelButton { /* ACGC */
+	float: left;
+}
+
 .uploadCancelButton:hover {
-	color: #F58B0F;
+	color: #00AED1;
 }
 
 .progressBar.continuous {
@@ -1273,3 +1537,9 @@ textarea.parameterInput {
 .fileExplorerProgressDiv {
 	margin-left: 10px;	
 }
+
+html[dir="rtl"] .fileExplorerProgressDiv { /* ACGC */
+	margin-right: 10px;
+	margin-left: auto;	
+}
+

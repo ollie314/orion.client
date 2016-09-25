@@ -7,7 +7,7 @@
  * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html). 
  *
  * Contributors:
- *     IBM Corporation - initial API and implementation
+ *	 IBM Corporation - initial API and implementation
  *******************************************************************************/
  /*eslint-env amd*/
 define([
@@ -15,8 +15,7 @@ define([
 'javascript/finder',
 'javascript/signatures',
 'orion/Deferred',
-'javascript/compilationUnit'
-], function(Objects, Finder, Signatures, Deferred, CU) {
+], function(Objects, Finder, Signatures, Deferred) {
 	
 	/**
 	 * @description Creates a new generate doc command
@@ -25,41 +24,45 @@ define([
 	 * @returns {javascript.commands.GenerateDocCommand} A new command
 	 * @since 6.0
 	 */
-	function GenerateDocCommand(ASTManager) {
+	function GenerateDocCommand(ASTManager, CUProvider) {
 		this.astManager = ASTManager;
+		this.cuprovider = CUProvider;
 	}
-	
+
+	/**
+	 * Check to see if its a ES6 export declaration
+	 * @param {ASTNode} astNode - any node
+	 * @returns {boolean} whether the given node represents a export declaration
+	 * @private
+	 */
+	function looksLikeExport(astNode) {
+	    return astNode.type === "ExportDefaultDeclaration" || astNode.type === "ExportNamedDeclaration" ||
+	        astNode.type === "ExportAllDeclaration" || astNode.type === "ExportSpecifier";
+	}
+
 	Objects.mixin(GenerateDocCommand.prototype, {
-		/* override
+		/**
 		 * @callback
 		 */
 		execute: function(editorContext, options) {
 			var that = this;
 			return editorContext.getFileMetadata().then(function(meta) {
-			    if(meta.contentType.id === 'application/javascript') {
-			        return Deferred.all([
-        				that.astManager.getAST(editorContext),
-        				editorContext.getCaretOffset()
-        			]).then(function(results) {
-        				that._doCommand(editorContext, results[0], results[1]);
-        			});
-			    } else {
-			        return Deferred.all([
-			            editorContext.getText(),
-			            editorContext.getCaretOffset()
-			        ]).then(function(results) {
-			            var offset = results[1];
-			            var blocks = Finder.findScriptBlocks(results[0]);
-			            if(blocks && blocks.length > 0) {
-			                var cu = new CU(blocks, meta);
-        			        if(cu.validOffset(offset)) {
-        			            return that.astManager.getAST(cu.getEditorContext()).then(function(ast) {
-        			               that._doCommand(editorContext, ast, offset); 
-        			            });
-        			        }
-    			        }
-			        });
-			    }
+				if(meta.contentType.id === 'application/javascript') {
+					return that.astManager.getAST(editorContext).then(function(ast) {
+						that._doCommand(editorContext, ast, options.offset);
+					});
+				} 
+				return editorContext.getText().then(function(text) {
+					var offset = options.offset;
+					var cu = that.cuprovider.getCompilationUnit(function() {
+						return Finder.findScriptBlocks(text);
+					}, meta);
+					if(cu.validOffset(offset)) {
+						 return that.astManager.getAST(cu.getEditorContext()).then(function(ast) {
+							  that._doCommand(editorContext, ast, offset); 
+						 });
+					}
+				});
 			});
 		},
 
@@ -71,19 +74,26 @@ define([
 		 * @since 8.0
 		 */
 		_doCommand: function _doCommand(editorContext, ast, offset) {
-		    var node = Finder.findNode(offset, ast, {parents:true});
+			var node = Finder.findNode(offset, ast, {parents:true});
 			if(node) {
-				var text = ast.source;
+				var text = ast.sourceFile.text;
 				var parent = this._resolveParent(node);
 				if(parent) {
 					//don't monkey with existing comments
 					var template;
 					var start = parent.range[0];
-					if(parent.type === 'FunctionDeclaration') {  //$NON-NLS-0$
-						template = this._genTemplate(parent.id.name, parent.params, false, parent.range[0], text);
-					} else if(parent.type === 'Property') {  //$NON-NLS-0$
-						template = this._genTemplate((parent.key.name ? parent.key.name : parent.key.value), parent.value.params, true, parent.range[0], text);
-					} else if(parent.type === 'VariableDeclarator') {  //$NON-NLS-0$
+					if(parent.type === 'FunctionDeclaration') {
+						var len = parent.parents.length-1;
+						var funcParent = parent.parents[len];
+						if (funcParent && looksLikeExport(funcParent)) {
+							template = this._genTemplate(parent.id.name, parent.params, false, funcParent.range[0], text);
+							start = funcParent.range[0];
+						} else {
+							template = this._genTemplate(parent.id.name, parent.params, false, parent.range[0], text);
+						}
+					} else if(parent.type === 'Property') {
+						template = this._genTemplate(parent.key.name ? parent.key.name : parent.key.value, parent.value.params, true, parent.range[0], text);
+					} else if(parent.type === 'VariableDeclarator') {
 						start = parent.range[0];
 						if(parent.decl) {
 							if(parent.decl.leadingComments) {
@@ -130,27 +140,34 @@ define([
 				char = text[--offset];
 			}
 			var parts = [];
-			parts.push('/**\n'+preamble+' * @name '+name+'\n');
+			parts.push('/**\n'+preamble+' * @name '+name+'\n'); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 			//TODO add in description template once editor bug is fixed
 			//${description}
-			parts.push(preamble+' * @description description\n');  //$NON-NLS-0$
+			parts.push(preamble+' * @description description\n');  //$NON-NLS-1$
 			if(isexpr) {
-				parts.push(preamble+' * @function\n');
+				parts.push(preamble+' * @function\n'); //$NON-NLS-1$
 			}
 			if(name.charAt(0) === '_') {
-					parts.push(preamble+' * @private\n');
+				parts.push(preamble+' * @private\n'); //$NON-NLS-1$
+			} 
+			var idx = name.lastIndexOf('.');
+			if(idx > -1) {
+				//might be member expression, take the last segment and see if it starts wth an underscore
+				if(name.slice(idx+1).charAt(0) === '_') {
+					parts.push(preamble+' * @private\n'); //$NON-NLS-1$
 				}
+			}
 			if(params) {
 				var  len = params.length;
 				for(var i = 0; i < len; i++) {
 					//TODO add template for type infos after suporting editor bug is fixed
 					// {${param'+(i+1)+'}}
-					parts.push(preamble+' * @param '+ params[i].name+'\n');  //$NON-NLS-0$  //$NON-NLS-0$
+					parts.push(preamble+' * @param '+ params[i].name+'\n');  //$NON-NLS-1$ //$NON-NLS-2$
 				}
 			}
 			//TODO add in returns template once editor bug is fixed
 			//{${returns}}
-			parts.push(preamble+' * @returns returns\n'+preamble+' */\n'+preamble);
+			parts.push(preamble+' * @returns returns\n'+preamble+' */\n'+preamble); //$NON-NLS-1$ //$NON-NLS-2$
 			return parts.join('');
 		},
 		
@@ -190,7 +207,7 @@ define([
 					}
 					//$FALLTHROUGH$
 				case 'AssignmentExpression':
-					if((node.left && node.left.type === 'MemberExpression') && 
+					if(node.left && node.left.type === 'MemberExpression' && 
 						(node.right && node.right.type === 'FunctionExpression')) {
 						return node;
 					}

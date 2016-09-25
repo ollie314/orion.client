@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2010, 2012 IBM Corporation and others.
+ * Copyright (c) 2010, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -9,6 +9,10 @@
  * Contributors: IBM Corporation - initial API and implementation
  ******************************************************************************/
 
+/**
+ * @class Provides the various rulers that show up on the left and right sides of the editor.  The rulers
+ * 			contain annotations with varying styles, hovers and on click behaviours.
+ */
 /*eslint-env browser, amd*/
 define("orion/editor/rulers", [
 	'i18n!orion/editor/nls/messages',
@@ -16,10 +20,9 @@ define("orion/editor/rulers", [
 	'orion/editor/annotations',
 	'orion/editor/tooltip', 
 	'orion/objects',
-	'orion/webui/littlelib', //$NON-NLS-0$
 	'orion/editor/util',
 	'orion/util'
-], function(messages, mTextView, mAnnotations, mTooltip, objects, lib, textUtil, util) {
+], function(messages, mTextView, mAnnotations, mTooltip, objects, textUtil, util) {
 
 	function BaseRuler (rulerLocation, rulerOverview, rulerStyle) {
 		this._location = rulerLocation || "left"; //$NON-NLS-0$
@@ -224,7 +227,7 @@ define("orion/editor/rulers", [
 		 */
 		setAnnotationModel: function (annotationModel) {
 			if (this._annotationModel) {
-				this._annotationModel.removEventListener("Changed", this._listener.onAnnotationModelChanged); //$NON-NLS-0$
+				this._annotationModel.removeEventListener("Changed", this._listener.onAnnotationModelChanged); //$NON-NLS-0$
 			}
 			this._annotationModel = annotationModel;
 			if (this._annotationModel) {
@@ -367,9 +370,15 @@ define("orion/editor/rulers", [
 			}
 			
 			var target = e.target ? e.target : e.srcElement;
-			this._curElementBounds = lib.bounds(target);
+			var bounds = target.getBoundingClientRect();
+			this._curElementBounds = Object.create(null);
+			this._curElementBounds.top = bounds.top;
+			this._curElementBounds.left = bounds.left;
+			this._curElementBounds.height = bounds.height;
+			this._curElementBounds.width = bounds.width;
+			
 			// If we have the entire ruler selected, just use a 1 pixel high area in the ruler (Bug 463486)
-			if (target._ruler){
+			if (target === this.node){
 				this._curElementBounds.top = e.clientY;
 				this._curElementBounds.height = 1;
 			}
@@ -486,10 +495,19 @@ define("orion/editor/rulers", [
 		_getAnnotationsAtLineIndex: function _getAnnotationsAtLineIndex(lineIndex){
 			if (lineIndex === undefined) { return; }
 			var view = this._view;
-			var model = view.getModel();
 			var annotationModel = this._annotationModel;
 			var annotations = [];
-			if (annotationModel) {
+			var model;
+			
+			//check if the current view exists, if not return empty array
+			if (view) {
+				model = view.getModel();
+			} else {
+				return [];
+			}
+			
+			// check if both model exists
+			if (annotationModel && model) {
 				var start = model.getLineStart(lineIndex);
 				var end = model.getLineEnd(lineIndex);
 				if (model.getBaseModel) {
@@ -504,8 +522,13 @@ define("orion/editor/rulers", [
 		_getTooltipInfo: function(contents, y, context) {
 			if (!contents) { return null; } // TODO: shouldn't this check the length, it'll never be null
 		
-			var hoverArea = this._curElementBounds;
-			if (typeof contents === 'string' && y) { //$NON-NLS-0$
+			var hoverArea = Object.create(null);
+			hoverArea.top = this._curElementBounds.top;
+			hoverArea.left = this._curElementBounds.left;
+			hoverArea.height = this._curElementBounds.height;
+			hoverArea.width = this._curElementBounds.width;
+			
+			if (typeof contents === 'string' && y) {
 				// Hack for line numbers
 				hoverArea.top = y;
 				hoverArea.height = 1;
@@ -516,13 +539,16 @@ define("orion/editor/rulers", [
 			// The tooltip is positioned opposite to where the ruler is
 			var position = rulerLocation === "left" ? "right" : "left"; //$NON-NLS-0$ //$NON-NLS-1$ //$NON-NLS-2$
 			
-			
-			var viewRect = lib.bounds(this._view._clientDiv);
 			var offsetX = 0;
 			var offsetY = 0;
-			offsetX = viewRect.left - (hoverArea.left + hoverArea.width);
+			if (this._view){
+				var viewRect = this._view._clientDiv.getBoundingClientRect();
+				offsetX = viewRect.left - (hoverArea.left + hoverArea.width);
+			} else {
+				offsetX = hoverArea.width;
+			}
 			offsetY = hoverArea.height;
-			if (position === "left") { //$NON-NLS-0$
+			if (position === "left") {
 				offsetX = -25;
 				// Hack for when the hoverArea is a sliver of the ruler, ruler is 2px wider than annotations
 				if (hoverArea.height === 1){
@@ -560,7 +586,11 @@ define("orion/editor/rulers", [
 		
 		_getOnClickTooltipInfo: function(annotation) {
 			var view = this._view;
-			var hoverArea = this._curElementBounds;
+			var hoverArea = Object.create(null);
+			hoverArea.top = this._curElementBounds.top;
+			hoverArea.left = this._curElementBounds.left;
+			hoverArea.height = this._curElementBounds.height;
+			hoverArea.width = this._curElementBounds.width;
 			var rulerLocation = this.getLocation();
 			var position = rulerLocation === "left" ? "right" : "left"; //$NON-NLS-0$ //$NON-NLS-1$ //$NON-NLS-2$
 			var info = {
@@ -569,11 +599,15 @@ define("orion/editor/rulers", [
 				anchorArea: hoverArea
 			};
 			
-			var viewRect = lib.bounds(view._clientDiv);
+			if (view){
+				var viewRect = view._clientDiv.getBoundingClientRect();
+				info.offsetX = viewRect.left - (hoverArea.left + hoverArea.width);
+			} else {
+				info.offsetX = hoverArea.width;
+			}
 
-			info.offsetX = viewRect.left - (hoverArea.left + hoverArea.width);
 			info.offsetY = hoverArea.height;
-			if (info.position === "left") { //$NON-NLS-0$
+			if (info.position === "left") {
 				info.offsetX = 20;
 			}
 			return info;
@@ -1087,7 +1121,7 @@ define("orion/editor/rulers", [
 					div1.style.position = "fixed"; //$NON-NLS-0$
 					div1.style.left = "-1000px"; //$NON-NLS-0$
 					zoomView._clientDiv.appendChild(div1);
-					div1.innerHTML = new Array(Math.ceil(textView.getClientArea().width / textView._metrics.charWidth) + 1).join("a"); //$NON-NLS-0$
+					div1.textContent = new Array(Math.ceil(textView.getClientArea().width / textView._metrics.charWidth) + 1).join("a"); //$NON-NLS-0$
 					var rect1 = div1.getBoundingClientRect();
 					width = Math.min(150, Math.ceil(rect1.right - rect1.left)) + "px"; //$NON-NLS-0$
 				} else {

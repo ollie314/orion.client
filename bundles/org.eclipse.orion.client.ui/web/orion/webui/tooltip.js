@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2012, 2013 IBM Corporation and others.
+ * Copyright (c) 2012, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -119,10 +119,13 @@ define(['orion/webui/littlelib'], function(lib) {
 				var self = this;
 				lib.addAutoDismiss([this._tip, this._node], function() {self.hide();});
 				if (this._trigger === "mouseover") { //$NON-NLS-0$
-					 this._tipInner.role = "tooltip"; //$NON-NLS-0$
-					 this._tipInner.id = "tooltip" + new Date().getTime().toString(); //$NON-NLS-0$
-					 this._node.setAttribute("aria-describedby", this._tipInner.id); //$NON-NLS-0$
-				
+					this._tipInner.setAttribute("role", "tooltip"); //$NON-NLS-2$ //$NON-NLS-1$
+					this._tipInner.id = "tooltip" + Date.now(); //$NON-NLS-0$
+					var label = this._node.getAttribute("aria-label");
+					if (this._text !== label) {
+						this._node.setAttribute("aria-describedby", this._tipInner.id); //$NON-NLS-0$
+				 	}
+
 					// see https://bugs.eclipse.org/bugs/show_bug.cgi?id=398960
 					// mousing over the tip itself will cancel any pending timeout to close it, but then we must
 					// also close it when we leave the tip.
@@ -183,31 +186,37 @@ define(['orion/webui/littlelib'], function(lib) {
 					left = rect.left + rect.width + this._tailSize + 1;
 					break;
 			}
-			var totalRect = lib.bounds(document.documentElement);
-			if (top + tipRect.height > totalRect.height) {
+			//Checking if the tooltip will fit inside the viewport of the browser
+			var body = document.body, html = document.documentElement;
+			var vPortLeft = Math.max(html.scrollLeft, body.scrollLeft);
+			var vPortTop = Math.max(html.scrollTop, body.scrollTop);
+			var vPortRight = vPortLeft + html.clientWidth;
+			var vPortBottom = vPortTop + html.clientHeight;			
+			
+			if (top + tipRect.height > vPortBottom) {
 				if (force) {
-					top = totalRect.height - tipRect.height - 1;
+					top = vPortBottom - tipRect.height - 1;
 				} else {
 					return false;
 				}
 			}
-			if (left + tipRect.width > totalRect.width) {
+			if (left + tipRect.width > vPortRight) {
 				if (force) {
-					left = totalRect.width - tipRect.width - 1;
+					left = vPortRight - tipRect.width - 1;
 				} else {
 					return false;
 				}
 			}
-			if (left < 0) {
+			if (left < vPortLeft) {
 				if (force) {
-					left = 4;
+					left = vPortLeft + 4;
 				} else {
 					return false;
 				}
 			}
-			if (top < 0) {
+			if (top < vPortTop) {
 				if (force) {
-					top = 4;
+					top = vPortTop + 4;
 				} else {
 					return false;
 				}

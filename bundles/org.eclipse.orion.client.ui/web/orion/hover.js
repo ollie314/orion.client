@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2014 IBM Corporation and others.
+ * Copyright (c) 2014, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -12,7 +12,7 @@
 /*eslint-env browser, amd*/
 
 define ([
-	'marked/marked' //$NON-NLS-0$
+	'marked/marked'
 ], function(Markdown) {
 
 	function Hover(editor, hoverFactory) {
@@ -51,22 +51,26 @@ define ([
 			});
 			this._qfToolbars = [];
 		},
-				
-		renderQuickFixes: function(annotation, parentDiv) {
+		
+		// TODO The allAnnotations iterator was collected using editor API, currently unused as we instead just get the annotation model from the annotation itself (not official API)
+		renderQuickFixes: function(annotation, allAnnotations, parentDiv) {
 			if  (!annotation || !parentDiv){
 				return;
 			}
-
-			var actionsDiv = document.createElement("div"); //$NON-NLS-0$
-			actionsDiv.className = "commandList"; //$NON-NLS-0$ 
-//			this._qfToolbars.push(actionsDiv);
+			
+			var actionsDiv = document.createElement("div");
+			actionsDiv.classList.add("commandList"); //$NON-NLS-0$ 
+			parentDiv.appendChild(actionsDiv);
 			
 			var nodeList = [];
 			var metadata = this.inputManager.getFileMetadata();
-			metadata.annotation = annotation;
-			this.commandRegistry.renderCommands("orion.edit.quickfix", actionsDiv, metadata, this.editor, 'quickfix', annotation, nodeList); //$NON-NLS-1$ //$NON-NLS-0$
-			delete metadata.annotation;
-			parentDiv.appendChild(actionsDiv);
+			if (metadata){
+				metadata.annotation = annotation;
+				metadata.readonly = this.inputManager.getReadOnly();
+				this.commandRegistry.renderCommands("orion.edit.quickfix", actionsDiv, metadata, this.editor, 'quickfix', annotation, nodeList); //$NON-NLS-1$ //$NON-NLS-2$
+				delete metadata.annotation;
+				delete metadata.readonly;
+			}
 		}
 
 	};
@@ -80,7 +84,7 @@ define ([
 		this.filterHoverPlugins();
 
 		// Track changes to the input type and re-filter
-		this.inputManager.addEventListener("InputChanged", function() { //$NON-NLS-0$
+		this.inputManager.addEventListener("InputChanged", function() {
 			this.filterHoverPlugins();
 		}.bind(this));
 	}

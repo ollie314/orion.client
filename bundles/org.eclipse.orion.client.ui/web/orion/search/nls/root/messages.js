@@ -1,18 +1,18 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2012 IBM Corporation and others.
+ * Copyright (c) 2012, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
  * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html). 
  * 
  ******************************************************************************/
-/*eslint-env browser, amd*/
-define({//Default message bundle
+/*eslint-env amd */
+define({
 	"Find:": "Find:",
 	"Find With": "Find With",
 	"ReplaceWith:": "ReplaceWith:",
-	"Replace With": "Replace With",
+	"Replace With": "Replace with",
 	"Show all": "Show all",
 	"Wrap search": "Wrap search",
 	"Incremental search": "Incremental search",
@@ -25,7 +25,7 @@ define({//Default message bundle
 	"Next": "Next",
 	"Previous": "Previous",
 	"Replace": "Replace",
-	"Replace...": "Replace...",
+	"Replace...": "Preview",
 	"Replace All": "Replace All",
 	"Show Replace": "Switch to Replace Mode",
 	"Hide Replace": "Switch to Search Mode",
@@ -97,10 +97,27 @@ define({//Default message bundle
 	"Show replacement preview": "Show replacement preview",
 	"File name patterns (comma-separated)": "File name patterns (comma-separated)",
 	"(* = any string, ? = any character)": "(* = any string, ? = any character)",
+	"(${0})": "(${0} matches)",
+	"singleMatch": "(1 match)",
 	"Choose a Folder": "Choose a Folder",
 	"Remove from search results": "Remove from search results",
 	"^ Edit Search": "^ Edit Search",
 	"Preview: " : "Preview: ",
 	"fullPath": "Show Full Path",
-	"switchFullPath": "Show/hide full path"
+	"switchFullPath": "Show/hide full path",
+	"refsInProject": "${0} references to \'${1}\' in ${2}",
+	"refsInWorkspace": "${0} references to \'${1}\' in the workspace",
+	"viewByTypes" : "By types",
+	"viewByFiles" : "By files",
+	"viewByTypesTooltip": "View references grouped by categories",
+	"viewByFilesTooltip": "View references grouped by files",
+	"hidePerfectMatch": "Hide perfect matches",
+	"showPerfectMatch": "Show perfect matches",
+	"hideNonMatch": "Hide non-matches",
+	"showNonMatch": "Show non-matches",
+	"hidePossibleMatch": "Hide possible matches",
+	"showPossibleMatch": "Show possible matches",
+	"perfectMatch": "Perfect match",
+	"notAMatch": "Not a match",
+	"couldBeMatch": "Could be a match"
 });

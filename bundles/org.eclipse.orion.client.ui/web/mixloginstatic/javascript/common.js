@@ -85,9 +85,8 @@ define(['orion/PageUtil', 'orion/xsrfUtils', 'orion/PageLinks', './jquery'],func
             if (checkusersrequest.readyState === 4) {
                 if (checkusersrequest.status === 200) {
                     var responseObject = JSON.parse(checkusersrequest.responseText);
-                    userCreationEnabled = responseObject.CanAddUsers;
-                    forceUserEmail = responseObject.ForceEmail;
-                    registrationURI = responseObject.RegistrationURI;
+                    var userCreationEnabled = responseObject.CanAddUsers;
+                    var registrationURI = responseObject.RegistrationURI;
                     if (!userCreationEnabled && !registrationURI) {
                         var loginURL = "LoginWindow.html";
                         var redirect = getRedirect() ? "?redirect=" + getRedirect() : "";
@@ -113,9 +112,9 @@ define(['orion/PageUtil', 'orion/xsrfUtils', 'orion/PageLinks', './jquery'],func
         if (oauth !== "" && oauth !== null) {
             var redirect = getRedirect();
             if (redirect !== null && PageUtil.validateURLScheme(decodeURIComponent(redirect))) {
-                return "../login/oauth?oauth="+oauth+"&redirect=" + redirect;
+                return "../login/oauth/" + oauth + "?oauth="+oauth+"&redirect=" + redirect;
             } else {
-                return "../login/oauth?oauth="+oauth;
+                return "../login/oauth/" + oauth + "?oauth="+oauth;
             }
         }
     }

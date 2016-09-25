@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2013 IBM Corporation and others.
+ * Copyright (c) 2013, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -62,40 +62,32 @@ define(['i18n!cfui/nls/messages',
 		getApplicationInfo: function(){
 			return this.applicationInfo;	
 		},
+		_scrollLock: false,
+		setScrollLock: function (lock) {
+			this._scrollLock = lock;
+		},
 		load: function(){
 			var logName = this.getInput();
-
-			var progressTimeout = null;
-			var clearTimeout = function() {
-				this.reportStatus("");
-				if (progressTimeout) {
-					window.clearTimeout(progressTimeout);
-				}
-			}.bind(this);
-			
-			var errorHandler = function(error) {
-				clearTimeout();
-				var statusService = this.serviceRegistry.getService("orion.page.message"); //$NON-NLS-0$
-				handleError(statusService, error);
-				this._setNoInput();
-			}.bind(this);
-			
 			this._acceptPatch = null;
 			
 			var fullLog = "";
 			this.applicationInfo.logs.forEach(function(line){
 				fullLog += line + "\n";
 			});
-			
-			mGlobalCommands.setPageTarget({
-				task: messages["cloudFoundryLogs"],
-//				target: log,
-				breadcrumbTarget: logName,
-				serviceRegistry: this.serviceRegistry,
-				commandService: this.commandRegistry});
-			
+			var selections, vScroll, hScroll;
+			if (this._scrollLock) {
+				selections = this.editor.getSelections();
+				vScroll = this.editor.getTextView().getTopPixel();
+				hScroll = this.editor.getTextView().getHorizontalPixel();
+			}
 			this._setInputContents(this._parsedLocation, logName, fullLog, {Name: logName});
-
+			if (this._scrollLock) {
+				this.editor.setSelections(selections, false);
+				this.editor.getTextView().setTopPixel(vScroll);
+				this.editor.getTextView().setHorizontalPixel(hScroll);
+			} else {
+				this.editor.setSelection(fullLog.length, fullLog.length);
+			}
 		},
 		constructor: LogInputManager
 	});
@@ -123,6 +115,7 @@ define(['i18n!cfui/nls/messages',
 				contentTypeRegistry: this.options.contentTypeRegistry,
 				inputManager: this.inputManager,
 				readonly: true,
+				editorCommands: this.options.editorCommands,
 				preferences: this.options.preferences,
 				searcher: this.options.searcher,
 				selection: this.options.selection,

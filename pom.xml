@@ -57,15 +57,17 @@
 
 	<properties>
 		<orion-version>1.0.0-SNAPSHOT</orion-version>
-		<tycho-version>0.20.0</tycho-version>
-		<tycho-extras-version>0.20.0</tycho-extras-version>
+		<tycho-version>0.22.0</tycho-version>
+		<tycho-extras-version>0.22.0</tycho-extras-version>
 		<tycho.scmUrl>scm:git:http://git.eclipse.org/gitroot/orion/org.eclipse.orion.client.git</tycho.scmUrl>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<java-version>1.7</java-version>
-		<requirejsHome>${basedir}/target/requirejs/</requirejsHome>
+		<java-version>[1.7, 1.8]</java-version>
+		<requirejsDir>${basedir}/target/requirejs</requirejsDir>
+		<requirejsVersion>2.1.18</requirejsVersion>
+		<nodejsHome>${basedir}/target/nodejs</nodejsHome>
 		<jsdocHome>${basedir}/target/jsdoc</jsdocHome>
 		<antrun-version>1.7</antrun-version>
-		<build-timestamp>${maven.build.timestamp}</build-timestamp>
+		<build-version>13.0.0-v${maven.build.timestamp}</build-version>
 		<maven.build.timestamp.format>yyyyMMdd-HHmm</maven.build.timestamp.format>
 	</properties>
 
@@ -83,16 +85,6 @@
 	</distributionManagement>
 
 	<dependencies>
-	    <dependency>
-	        <groupId>org.mozilla</groupId>
-	        <artifactId>rhino</artifactId>
-	        <version>1.7R4</version>
-	    </dependency>
-	    <dependency>
-	        <groupId>com.google.javascript</groupId>
-	        <artifactId>closure-compiler</artifactId>
-	        <version>v20130411</version>
-	    </dependency>
 	</dependencies>
 
 	<repositories>
@@ -150,22 +142,33 @@
 				<extensions>true</extensions>
 			</plugin>
 			<plugin>
-	            <artifactId>maven-dependency-plugin</artifactId>
-	            <inherited>false</inherited>
-	            <executions>
-	                <execution>
-	                    <id>install-jar</id>
-	                    <phase>verify</phase>
-	                    <goals>
-	                        <goal>copy-dependencies</goal>
-	                    </goals>
-	                    <configuration>
-	                        <outputDirectory>${requirejsHome}/lib/</outputDirectory>
-	                        <stripVersion>true</stripVersion>
-	                    </configuration>
-	                </execution>
-	            </executions>
-	        </plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>2.10</version>
+				<executions>
+					<execution>
+						<id>unpack</id>
+						<inherited>false</inherited>
+						<phase>verify</phase>
+						<goals>
+							<goal>unpack</goal>
+						</goals>
+						<configuration>
+							<artifactItems>
+								<artifactItem>
+									<groupId>org.webjars</groupId>
+									<artifactId>requirejs-node</artifactId>
+									<version>${requirejsVersion}</version>
+									<type>jar</type>
+									<overWrite>false</overWrite>
+									<outputDirectory>${requirejsDir}</outputDirectory>
+									<includes>**/*.js</includes>
+								</artifactItem>
+							</artifactItems>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 			<plugin>
 				<artifactId>maven-antrun-plugin</artifactId>
 				<executions>
@@ -175,11 +178,13 @@
 						<phase>verify</phase>
 						<configuration>
 							<target unless="orion.client.build.skip">
-								<property name="builder" value="${basedir}/releng/org.eclipse.orion.client.releng/builder/"/>
-								<property name="requirejsHome" value="${requirejsHome}"/>
-								<property name="buildConfig" value="${builder}/scripts/orion.build.js" />
+								<taskdef resource="net/sf/antcontrib/antcontrib.properties" classpathref="maven.plugin.classpath" />
+								<property name="builder"        value="${basedir}/releng/org.eclipse.orion.client.releng/builder/"/>
+								<property name="requirejsHome"  value="${requirejsDir}/META-INF/resources/webjars/requirejs-node/${requirejsVersion}"/>
+								<property name="nodejsHome"     value="${nodejsHome}"/>
+								<property name="buildConfig"    value="${builder}/scripts/orion.build.js" />
 								<property name="buildDirectory" value="${basedir}"/>
-								<property name="orionClient" value="${buildDirectory}"/>
+								<property name="orionClient"    value="${buildDirectory}"/>
 
 								<!-- generate jsdocs -->
 								<property name="jsdocHome"
@@ -192,7 +197,6 @@
 							    <!-- minify javascript -->
 								<ant antfile="${basedir}/releng/org.eclipse.orion.client.releng/builder/orion.mini.xml">
 									<property name="requirejsHome" value="${requirejsHome}"/>
-								    <target name="download3rdPartyLibs"/>
 								    <target name="updateBuildLabel"/>
 									<target name="requirejs"/>
 								</ant>
@@ -208,16 +212,15 @@
 						<phase>generate-sources</phase>
 						<configuration>
 							<target>
-								<taskdef resource="net/sf/antcontrib/antcontrib.properties"
-									classpathref="maven.plugin.classpath" />
+								<taskdef resource="net/sf/antcontrib/antcontrib.properties" classpathref="maven.plugin.classpath" />
 								<if>
 									<available file="about.properties" />
 									<then>
 										<echo
-											message="Replacing @qualifier@ token within about.properties with build id 9.0.0-v${build-timestamp}" />
+											message="Replacing @qualifier@ token within about.properties with build id ${build-version}" />
 										<replace file="about.properties">
 											<replacefilter token="@qualifier@"
-												value="9.0.0-v${build-timestamp}" />
+												value="${build-version}" />
 										</replace>
 									</then>
 								</if>
@@ -233,6 +236,17 @@
 						<groupId>ant-contrib</groupId>
 						<artifactId>ant-contrib</artifactId>
 						<version>20020829</version>
+						<exclusions>
+							<exclusion>
+								<groupId>ant</groupId>
+								<artifactId>ant</artifactId>
+							</exclusion>
+						</exclusions>
+					</dependency>
+					<dependency>
+						<groupId>org.apache.ant</groupId>
+						<artifactId>ant-nodeps</artifactId>
+						<version>1.8.1</version>
 					</dependency>
 				</dependencies>
 			</plugin>
@@ -287,4 +301,36 @@
 			</plugins>
 		</pluginManagement>
 	</build>
+
+	<profiles>
+		<!-- Profile controlling whether the nodejs-maven-plugin is used -->
+		<profile>
+			<id>nodejs</id>
+			<activation>
+				<property>
+					<name>!skipNodejs</name>
+				</property>
+			</activation>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>com.github.skwakman.nodejs-maven-plugin</groupId>
+						<artifactId>nodejs-maven-plugin</artifactId>
+						<version>1.0.5-node-0.10.25</version>
+						<executions>
+							<execution>
+								<phase>package</phase>
+								<goals>
+									<goal>extract</goal>
+								</goals>
+							</execution>
+						</executions>
+						<configuration>
+							<targetDirectory>${nodejsHome}</targetDirectory>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>

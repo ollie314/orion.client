@@ -109,15 +109,26 @@ define([
 				onComplete(parentItem.children);
 			} else if (parentItem.Type === "RepoRoot") { //$NON-NLS-0$
 				Deferred.when (this.repositories || this.progressService.progress(this.gitClient.getGitClone(that.location), messages["Getting git repository details"]), function(resp){
-					var repositories = that.repositories = resp.Children || resp;
-					var allInfoDeferreds = repositories.map(function(repo) {
-						return repo.infoDeferred = that.loadRepositoryInfo(repo);
-					});
+					var repositories = that.processChildren(parentItem, resp.Children || resp);
+					var count = 0;
 					function done() {
-						if (progress) progress.done();
+						if (--count <= 0) {
+							if (progress) progress.done();
+						}
 					}
-					Deferred.all(allInfoDeferreds).then(done, done);
-					onComplete(that.processChildren(parentItem, repositories));
+					that.repositories = repositories.filter(function(repo) {
+						if (repo.Type === "Clone" ) {
+							count++;
+							repo.infoDeferred = that.loadRepositoryInfo(repo);
+							repo.infoDeferred.then(done, done);
+							return repo;
+						}
+						return null;
+					});
+					if (count == 0) {
+						done();
+					}
+					onComplete(repositories);
 				}, function(error){
 					if (progress) progress.done();
 					that.handleError(error);
@@ -127,6 +138,31 @@ define([
 			}
 		},
 		processChildren: function(parentItem, children) {
+			function sort(children) {
+				children.sort(function(repo1, repo2) {
+					return repo1.Name.localeCompare(repo2.Name);
+				});
+			}
+			
+			sort(children);
+			
+			function attachChildren(repo, array) {
+				array.push(repo);
+				if (repo.Children) {
+					sort(repo.Children);
+					for (var j=0; j<repo.Children.length; j++) {
+						attachChildren(repo.Children[j], array);
+					}
+				}
+			}
+			
+			var allRepos = [];
+			for (var i=0; i<children.length; i++) {
+				attachChildren(children[i], allRepos);
+			}
+			
+			children = allRepos;
+			
 			var filter = this.filterQuery;
 			if (filter) {
 				children = children.filter(function(item) {
@@ -139,14 +175,12 @@ define([
 			children.forEach(function(item) {
 				item.parent = parentItem;
 			});
-			children.sort(function(repo1, repo2) {
-				return repo1.Name.localeCompare(repo2.Name);
-			});
 			parentItem.children = children;
 			return children;
 		},
 		getId: function(/* item */ item){
-			return this.parentId + (item.Name ? item.Name : "") + (item.Type ? item.Type : ""); //$NON-NLS-0$
+			return this.parentId + (item.Name ? item.Name : "") + (item.Type ? item.Type : "") +
+					(item.Parents ? ("-for-" + item.Parents[item.Parents.length-1].replace(/\//g, "")) : ""); //$NON-NLS-0$
 		}
 	});
 	
@@ -183,8 +217,13 @@ define([
 			switch (event.action) {
 			case "addClone": //$NON-NLS-0$
 			case "removeClone": //$NON-NLS-0$
+			case "updateSubmodules": //$NON-NLS-0$
+			case "addSubmodule": //$NON-NLS-0$
+			case "deleteSubmodule": //$NON-NLS-0$
+			case "checkoutFile": //$NON-NLS-0$
 				this.changedItem();
 				break;
+				
 			}
 		}.bind(this));
 	}
@@ -194,6 +233,9 @@ define([
 			if (this._modelListener) {
 				mGitCommands.getModelEventDispatcher().removeEventListener("modelChanged", this._modelListener); //$NON-NLS-0$
 				this._modelListener = null;
+			}
+			if (this.section.filterBox) {
+				this.section.filterBox.destroy();
 			}
 			mExplorer.Explorer.prototype.destroy.call(this);
 		},
@@ -218,8 +260,11 @@ define([
 			return deferred;
 		},
 		createFilter: function() {
-			uiUtil.createFilter(this.section, messages["Filter items"],  function(value) {
-				this.model.filterQuery = value;
+			if (this.section.filterBox) {
+				this.section.filterBox.destroy();
+			}
+			this.section.filterBox = uiUtil.createFilter(this.section, messages["Filter repositories"],  function(value) {
+				this.model.filterQuery = value.trim();
 				this.changedItem();
 			}.bind(this));
 		},
@@ -250,8 +295,8 @@ define([
 			});
 			return deferred;
 		},
-		isRowSelectable: function() {
-			return !!this.selection;
+		isRowSelectable: function(item) {
+			return !!this.selection && (!item.SubmoduleStatus || item.SubmoduleStatus.Type != "UNINITIALIZED"); //$NON-NLS-0$
 		},
 		updateCommands: function() {
 			var section = this.section;
@@ -259,7 +304,12 @@ define([
 			var commandRegistry = this.commandService;
 			var actionsNodeScope = this.sectionActionScodeId || section.actionsNode.id;
 //			commandRegistry.registerCommandContribution("itemLevelCommands", "eclipse.orion.git.pull", 100); //$NON-NLS-1$ //$NON-NLS-0$
-			commandRegistry.registerCommandContribution("itemLevelCommands", "eclipse.git.deleteClone", 200); //$NON-NLS-1$ //$NON-NLS-0$
+			commandRegistry.registerCommandContribution("itemLevelCommands", "eclipse.git.addSubmodule", 100); //$NON-NLS-1$ //$NON-NLS-0$
+			commandRegistry.registerCommandContribution("itemLevelCommands", "eclipse.git.syncSubmodules", 200); //$NON-NLS-1$ //$NON-NLS-0$
+			commandRegistry.registerCommandContribution("itemLevelCommands", "eclipse.git.updateSubmodules", 300); //$NON-NLS-1$ //$NON-NLS-0$
+			commandRegistry.registerCommandContribution("itemLevelCommands", "eclipse.git.deleteSubmodule", 400); //$NON-NLS-1$ //$NON-NLS-0$
+			commandRegistry.registerCommandContribution("itemLevelCommands", "eclipse.git.deleteClone", 500); //$NON-NLS-1$ //$NON-NLS-0$
+			
 			if (this.singleRepository) {
 				commandRegistry.registerCommandContribution(actionsNodeScope, "eclipse.orion.git.popStash", 100); //$NON-NLS-1$ //$NON-NLS-0$
 				commandRegistry.registerCommandContribution(actionsNodeScope, "eclipse.orion.git.applyPatch", 200); //$NON-NLS-1$ //$NON-NLS-0$
@@ -286,19 +336,26 @@ define([
 				case 0:
 					var explorer = this.explorer;
 					var repo = item;
-				
 					td = document.createElement("td"); //$NON-NLS-0$
 					div = document.createElement("div"); //$NON-NLS-0$
 					div.className = "sectionTableItem"; //$NON-NLS-0$
 					td.appendChild(div);
 					var horizontalBox = document.createElement("div"); //$NON-NLS-0$
 					horizontalBox.className = "gitListCell"; //$NON-NLS-0$
+					
+					if (item.Parents) {
+						var len = item.Parents.length;
+						if (len > 0) {
+							horizontalBox.style.paddingLeft = (len * 25).toString() + "px";
+						}
+					}
+					
 					div.appendChild(horizontalBox);	
 					
 					var actionsID, title, description, subDescription, extraDescriptions = [], titleClass = "", titleLink;
 					if (item.Type === "NoContent") { //$NON-NLS-0$
 						title = messages[item.Type];
-					} else if (item.parent.Type === "RepoRoot") { //$NON-NLS-0$
+					} else if ((item.Type === "Clone" && !item.parent) || item.parent.Type === "RepoRoot") { //$NON-NLS-0$
 						if (explorer.showLinks) {
 							titleLink = require.toUrl(repoTemplate.expand({resource: repo.Location}));
 						} else {
@@ -308,13 +365,24 @@ define([
 							tableRow.classList.remove("selectableNavRow"); //$NON-NLS-0$
 						} else {
 							var ellipses = "..."; //$NON-NLS-0$
+
 							description = repo.GitUrl ? messages["git url:"] + repo.GitUrl : messages["(no remote)"];
-							subDescription = repo.Content ? messages["location: "] + repo.Content.Path : ellipses;
+							if(repo.SubmoduleStatus && repo.SubmoduleStatus.Type ==="UNINITIALIZED" ){
+								subDescription = messages["location: "] + repo.SubmoduleStatus.Path;
+							}else {
+								subDescription = repo.Content ? messages["location: "] + repo.Content.Path : ellipses;
+							}
+							
+
 							if (explorer.mode === "full") { //$NON-NLS-0$
 								var status = repo.status;
 								if (status) {
-									if (status.RepositoryState !== "SAFE"){ //$NON-NLS-0$
-										extraDescriptions.push(messages["Rebase in progress!"]);
+									if (util.isRebasing(status)){
+										extraDescriptions.push(messages["RebaseProgress"]);
+									} else if (util.isMerging(status)){
+										extraDescriptions.push(messages["MergeProgress"]);
+									} else if (util.isCherryPicking(status)){
+										extraDescriptions.push(messages["CherryPickProgress"]);
 									}
 									
 									var unstaged = status.Untracked.length + status.Conflicting.length + status.Modified.length + status.Missing.length;
@@ -328,8 +396,20 @@ define([
 									extraDescriptions.push(commitsState > 0 ? i18nUtil.formatMessage(messages["NCommitsToPush"], commitsState) : messages["Nothing to push."]);
 								}
 							}
-							if (repo.infoDeferred) {
-								title = repo.Name + ellipses;
+							
+							title = repo.Name;
+							if (item.Children) {
+								var subLength = item.Children.length;
+								if (subLength === 1) {
+									title = i18nUtil.formatMessage(messages["SingleSubmodule"], repo.Name, subLength);
+								} else {
+									title = i18nUtil.formatMessage(messages["PluralSubmodule"], repo.Name, subLength);
+								}
+							}
+							if(repo.SubmoduleStatus && repo.SubmoduleStatus.Type ==="UNINITIALIZED" ){
+								title = title + messages["UninitializedSubmodule"];
+							}else if (repo.infoDeferred) {
+								title = title + ellipses;
 								if (explorer.mode === "full") extraDescriptions.push(ellipses); //$NON-NLS-0$
 								repo.infoDeferred.then(function() {
 									if (explorer.destroyed) return;
@@ -375,7 +455,6 @@ define([
 							section.appendChild(span);
 						});
 					}
-
 					if (explorer.singleRepository) {
 						tableRow.classList.remove("selectableNavRow"); //$NON-NLS-0$
 					} else {

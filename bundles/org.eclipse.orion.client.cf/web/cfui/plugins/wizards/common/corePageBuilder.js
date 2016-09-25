@@ -9,8 +9,8 @@
  * Contributors: IBM Corporation - initial API and implementation
  ******************************************************************************/
 /*eslint-env browser, amd*/
-define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboTextInput', 'orion/webui/Wizard', 'orion/webui/littlelib'], 
-		function(messages, mSelection, ComboTextInput, mWizard, lib){
+define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboTextInput', 'orion/webui/Wizard', 'orion/webui/littlelib', 'orion/Deferred', 'orion/webui/tooltip',], 
+		function(messages, mSelection, ComboTextInput, mWizard, lib, Deferred, mTooltip){
 	
 	/**
 	 * A core page builder. The page gathers the minimum necessary
@@ -19,6 +19,7 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 	 */
 	
 	var rendered = false;
+	var plan;
 	
 	function CorePageBuilder(options){
 		options = options || {};
@@ -39,12 +40,15 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 		_init : function(options){
 			this._confName = options.ConfName || null,
 			this._clouds = options.Clouds || [];
-			this._defaultTarget = options.DefaultTarget;
-			this._manifestPath = options.ManifestPath || ""; //$NON-NLS-0$
+			this._defaultTarget = options.DefaultTarget || {};
+			this._filePath = options.FilePath;
+			this._projectLocation = options.ProjectLocation;
+			this._initManifestPath = options.InitManifestPath || ""; //$NON-NLS-0$
 			this._manifestApplication = options.ManifestApplication;
 			this._manifestInstrumentation = options.ManifestInstrumentation || {};
 			this._serviceRegistry = options.serviceRegistry;
 			this._cfService = options.CFService;
+			this._fileClient = options.FileClient;
 			
 			this._showMessage = options.showMessage;
 			this._hideMessage = options.hideMessage;
@@ -92,40 +96,40 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 			self._showMessage(messages["loadingDeploymentSettings..."]);
 			self._cfService.getOrgs(target).then(
 				function(orgs){
-					lib.empty(self._orgsDropdown);
-					orgs.Orgs.forEach(
-						function(org){
-							var option = document.createElement("option"); //$NON-NLS-0$
-							option.appendChild(document.createTextNode(org.Name));
-							option.org = org;
-							
-							if (self._defaultTarget && (self._defaultTarget.OrgId === org.Guid
-									|| self._defaultTarget.Org === org.Name)){
-								option.selected = "selected"; //$NON-NLS-0$
-								self._defaultTarget.Org = org.Name;
+					if(self._clouds.length == 1 || target.Name === self._cloudsDropdown.value){
+						lib.empty(self._orgsDropdown);
+						orgs.Orgs.forEach(
+							function(org){
+								var option = document.createElement("option"); //$NON-NLS-0$
+								option.appendChild(document.createTextNode(org.Name));
+								option.org = org;
+								
+								if (self._defaultTarget && (self._defaultTarget.OrgId === org.Guid
+										|| self._defaultTarget.Org === org.Name)){
+									option.selected = "selected"; //$NON-NLS-0$
+									self._defaultTarget.Org = org.Name;
+								}
+								
+								self._orgsDropdown.appendChild(option);
+								self._targets[org.Name] = [];
+								
+								if (org.Spaces){
+									org.Spaces.forEach(function(space){
+										var newTarget = {};
+										newTarget.Url = target.Url;
+										if (target.ManageUrl)
+											newTarget.ManageUrl = target.ManageUrl;
+										
+										newTarget.Org = org.Name;
+										newTarget.Space = space.Name;
+										newTarget.SpaceId = space.Guid;
+										self._targets[org.Name].push(newTarget);
+									});
+								}
 							}
-							
-							self._orgsDropdown.appendChild(option);
-							self._targets[org.Name] = [];
-							
-							if (org.Spaces){
-								org.Spaces.forEach(function(space){
-									var newTarget = {};
-									newTarget.Url = target.Url;
-									if (target.ManageUrl)
-										newTarget.ManageUrl = target.ManageUrl;
-									
-									newTarget.Org = org.Name;
-									newTarget.Space = space.Name;
-									newTarget.SpaceId = space.Guid;
-									self._targets[org.Name].push(newTarget);
-								});
-							}
-						}
-					);
-					
-					self._loadSpaces(self._orgsDropdown.value);
-					self._hideMessage();
+						);
+						self._loadSpaces(self._orgsDropdown.value);
+					}
 				}, function(error){
 					self._handleError(error, target, function(){ self._loadTargets(target); });
 				}
@@ -137,7 +141,6 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 			
 			var targetsToDisplay = self._targets[org];
 			lib.empty(self._spacesDropdown);
-			lib.empty(self._domainsDropdown);
 			
 			targetsToDisplay.forEach(function(target){
 				var option = document.createElement("option"); //$NON-NLS-0$
@@ -152,7 +155,6 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 				
 				self._spacesDropdown.appendChild(option);
 			});
-			
 			self._setSelection();
 			self._selection.getSelection(function(selection){
 				self._loadDomains(selection);
@@ -163,68 +165,191 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 		
 		_loadDomains : function(target){
 			var self = this;
-			lib.empty(self._domainsDropdown);
-			
+
 			self._domainsDeferred = self._cfService.getDomains(target);
 			self._domainsDeferred.then(function(domains){
-				if(domains.Domains){
-					domains.Domains.forEach(function(domain){
-						var option = document.createElement("option"); //$NON-NLS-0$
-						option.appendChild(document.createTextNode(domain.DomainName));
+				
+				self._setSelection();
+				var selected = self._selection.getSelection();
+				if(selected && target.Url === selected.Url && target.ManageUrl === selected.ManageUrl && target.Org === selected.Org && target.Space === selected.Space && target.SpaceId === selected.SpaceId){
+					if(domains.Domains){
+						lib.empty(self._domainsDropdown);
+						domains.Domains.forEach(function(domain){
+							var option = document.createElement("option"); //$NON-NLS-0$
+							option.appendChild(document.createTextNode(domain.DomainName));
+							
+							if (domain.DomainName === (self._manifestInstrumentation.domain || self._manifestApplication.domain)){
+								option.selected = "selected"; //$NON-NLS-0$
+					    	}
+							if (self._manifestInstrumentation.domain) {
+								self._domainsDropdown.classList.add("modifiedCell");
+							}
+							
+							self._domainsDropdown.appendChild(option);
+						});
 						
-						if (domain.DomainName === (self._manifestInstrumentation.domain || self._manifestApplication.domain)){
-							option.selected = "selected"; //$NON-NLS-0$
+						self._domainsDropdown.onchange = function(evt) {
+				    		if (self._domainsDropdown.value === self._manifestApplication.domain){
+				    			self._domainsDropdown.classList.remove("modifiedCell");
+				    		} else {
+				    			self._domainsDropdown.classList.add("modifiedCell");
+				    		}
 				    	}
-						if (self._manifestInstrumentation.domain) {
-							self._domainsDropdown.classList.add("modifiedCell");
-						}
-						
-						self._domainsDropdown.appendChild(option);
-					});
-					
-					self._domainsDropdown.onchange = function(evt) {
-			    		if (self._domainsDropdown.value === self._manifestApplication.domain){
-			    			self._domainsDropdown.classList.remove("modifiedCell");
-			    		} else {
-			    			self._domainsDropdown.classList.add("modifiedCell");
-			    		}
-			    	}
+						self._setSelection();
+						self._hideMessage();
+					}
 				}
 			});
 		},
 		
 		_loadApplications : function(target){
 			var self = this;
-			
+
+			if(self._appsDropdown._recentEntryButton.disabled != true){
+				self._appsDropdown._recentEntryButton.disabled = true;
+			}
+
 			self._appsDeferred = self._cfService.getApps(target);
 			self._appsDeferred.then(function(apps){
 				self._appsList = [];
-				if(apps.Apps){
+				if(apps && apps.Apps){
 					apps.Apps.forEach(function(app){
 						self._appsList.push(app.Name);
 					});
 				}
+				self._appsDropdown._recentEntryButton.disabled = false;
 			});
 		},
 		
 		_loadHosts : function(target){
 			var self = this;
-			
+
+			if(self._hostDropdown._recentEntryButton.disabled != true){
+				self._hostDropdown._recentEntryButton.disabled = true;
+			}
+
 			self._routesDeferred = self._cfService.getRoutes(target);
 			self._routesDeferred.then(function(routes){
-				if(routes.Routes){
-					self._routesList = [];
+				self._routesList = [];
+				if(routes && routes.Routes){
 					routes.Routes.forEach(function(route){
 						self._routesList.push(route.Host);
 					});
 				}
+				self._hostDropdown._recentEntryButton.disabled = false;
 			});							
 		},
 		
 		getSelection : function(){
 			return this._selection;
 		},
-			
+
+		getManifestPath : function(){
+			var path;
+
+			path = this._manifestInput.value;
+			return path;
+		},
+		
+		validateManifestPath : function(){
+
+			var manifestPath = this.getManifestPath();
+
+			if(manifestPath.charAt(0) == "/")
+				manifestPath = manifestPath.substring(1, manifestPath.length);
+
+			if(manifestPath.charAt(manifestPath.length-1) != "/" && manifestPath.lastIndexOf(".yml") === -1)
+				manifestPath = manifestPath + "/";
+
+			var location = this._projectLocation + manifestPath;
+			var manifestFile = location.substring(location.lastIndexOf("/") + 1);
+			var pathToFile = location.substring(0, location.lastIndexOf("/") + 1);
+
+			if(manifestFile == ""){
+				return this._fileClient.fetchChildren(location).then(function(children){
+					var manifests = children.filter(function(child) {
+						return child.Name === "manifest.yml"; //$NON-NLS-0$
+					});
+
+					return manifests.length !== 0;
+					
+				}, function(error){return false;});
+			} else {
+				return this._fileClient.fetchChildren(pathToFile).then(function(children){
+					var manifests = children.filter(function(child) {
+						return child.Name === manifestFile; //$NON-NLS-0$
+					});
+
+					return manifests.length !== 0 && manifests[0].Directory === false;
+					
+				}, function(error){return false;});
+			}
+		},
+		
+		setManifestPathMessage : function(result){
+
+			var self = this;
+			var manifestPath = self.getManifestPath();
+
+			if(result === true){
+
+				if(manifestPath.charAt(manifestPath.length-1) != "/" && manifestPath.lastIndexOf(".yml") === -1)
+					self._manifestInput.value = manifestPath + "/manifest.yml";
+
+				if(manifestPath.charAt(manifestPath.length-1) === "/")
+					self._manifestInput.value = manifestPath + "manifest.yml";
+
+				if(self._manifestInputWrapper.classList.contains("wrongPath"))
+					self._manifestInputWrapper.classList.remove("wrongPath");
+
+				if(!self._manifestInputWrapper.classList.contains("correctPath")){
+					self._manifestInputWrapper.classList.add("correctPath");
+					if (self._manifestInputWrapper.tooltip) {
+						self._manifestInputWrapper.tooltip.destroy();
+					}
+				}
+			}
+			else if(result === false){
+				if(self._manifestInputWrapper.classList.contains("correctPath"))
+					self._manifestInputWrapper.classList.remove("correctPath");
+
+				if(!self._manifestInputWrapper.classList.contains("wrongPath")){
+					self._manifestInputWrapper.classList.add("wrongPath");
+					self._manifestInputWrapper.tooltip = new mTooltip.Tooltip({
+						node: self._manifestInputWrapper,
+						text: messages["CouldNotFindManifestInProvidedPath"],
+						trigger: "mouseover", //$NON-NLS-0$
+						position: ["above"] //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+					});
+				}
+			}
+		},
+		
+		getPlan : function(){
+			var manifestPath = this.getManifestPath();
+
+			if(manifestPath != this._initManifestPath){
+				if(manifestPath.charAt(0) == "/")
+					manifestPath = manifestPath.substring(1, manifestPath.length);
+
+				var deferred = new Deferred();
+				var relativeFilePath = this._filePath + manifestPath;
+				this._cfService.getDeploymentPlans(relativeFilePath).then(function(resp) {
+					var plans = resp.Children;
+					var selectedPlan;
+					plans.forEach(function(plan) {
+						if (!selectedPlan && plan.ApplicationType != "generic")
+							selectedPlan = plan;
+					});
+					plan = deferred.resolve(selectedPlan || plans[0]);
+					return plan;
+				});
+				this._initManifestPath = manifestPath;
+				return deferred;
+			}
+			return plan;
+		},
+		
 		build : function(){
 			
 			var self = this;
@@ -338,6 +463,9 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 						document.getElementById("orgsLabel").appendChild(document.createTextNode(messages["organization*:"])); //$NON-NLS-0$
 						self._orgsDropdown = document.createElement("select"); //$NON-NLS-0$
 						self._orgsDropdown.onchange = function(event){
+							self._showMessage(messages["loadingDeploymentSettings..."]);
+							lib.empty(self._domainsDropdown);
+							self._setSelection();
 							var selectedOrg = event.target.value;
 							self._loadSpaces(selectedOrg);
 	
@@ -352,6 +480,8 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 						document.getElementById("spacesLabel").appendChild(document.createTextNode(messages["space*:"])); //$NON-NLS-0$
 						self._spacesDropdown = document.createElement("select"); //$NON-NLS-0$
 						self._spacesDropdown.onchange = function(/*event*/){
+							self._showMessage(messages["loadingDeploymentSettings..."]);
+							lib.empty(self._domainsDropdown);
 							self._setSelection();
 							var selection = self._selection.getSelection();
 							self._loadDomains(selection);
@@ -363,11 +493,51 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 						
 						// render the manifest file
 						document.getElementById("manifestLabel").textContent = messages["manifestLabel"];
-						var manifestInput = document.createElement("input"); //$NON-NLS-0$
-						manifestInput.value = self._manifestPath || "";
-						manifestInput.readOnly = true; // TODO should be editable
-						document.getElementById("manifest").appendChild(manifestInput); //$NON-NLS-0$
+						self._manifestInput = document.createElement("input"); //$NON-NLS-0$
+						self._manifestInput.value = (self._initManifestPath == "") ? "manifest.yml" : self._initManifestPath;
+						self._manifestInput.readOnly = false; // TODO should be editable
+						self._manifestInputWrapper = document.getElementById("manifest"); //$NON-NLS-0$
+						self._manifestInputWrapper.appendChild(self._manifestInput);
 						
+						self.validateManifestPath().then(self.setManifestPathMessage.bind(self));
+
+						self._manifestInput.onfocus = function(){
+							self._manifestCheck = setInterval(function(){
+								if(self.getManifestPath() != self._initManifestPath){
+									var check = self.validateManifestPath();
+									check.then(function(result){
+										if(result === true){
+											self.setManifestPathMessage(true);
+										}
+										else{
+											self.setManifestPathMessage(false);
+										}
+										
+										var selection = self._selection.getSelection();
+										self.getPlan().then(function(result){
+											self._manifestApplication = result.Manifest.applications[0];
+											self._appsInput.value = self._manifestApplication.name;
+											self._hostInput.value = self._manifestApplication.host;
+											self.validateHostInputValue();
+
+											for(var i = 0; self._domainsDropdown.length > i; i++){
+												if(self._domainsDropdown[i].value === (self._manifestApplication.domain || self._manifestInstrumentation.domain)){
+													self._domainsDropdown[i].selected = "selected";
+												}
+											}
+										});
+									});
+								}
+								if(self.getManifestPath() == self._initManifestPath){
+									self.validateManifestPath().then(self.setManifestPathMessage.bind(self));
+								}
+							},1500);
+						},
+
+						self._manifestInput.onblur = function(){
+							clearInterval(self._manifestCheck);
+						},
+
 						// Manifest Settings section
 						document.getElementById("manifestSettings").textContent = messages["manifestSettings"]; //$NON-NLS-0$
 						
@@ -387,27 +557,26 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 							serviceRegistry: this._serviceRegistry,
 							onRecentEntryDelete: null,
 							defaultRecentEntryProposalProvider: function(onItem){
-								self._appsDeferred.then(function(){
-									
-									var ret = [];
+
+									var result = [];
 									self._appsList.forEach(function(app){
 										if(!app) return;
-										ret.push({
+										result.push({
 											type: "proposal", //$NON-NLS-0$
 											label: app,
 											value: app
 										});
 									});
-									
-									onItem(ret);									
-								});
+									onItem(result);
 							}
 						});
 						
 						self._appsInput = self._appsDropdown.getTextInputNode();						
 						self._appsInput.onkeyup = function(){this.validate();}.bind(this.wizard);
 						self._appsInput.addEventListener("focus",function(){this.validate();}.bind(this.wizard)); //$NON-NLS-0$
-						
+
+						self._appsDropdown._recentEntryButton.disabled = true;
+
 	//					if(self._manifestApplication.name)
 	//						self._appsInput.value = self._manifestApplication.name;
 						
@@ -428,23 +597,22 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 							serviceRegistry: this._serviceRegistry,
 							onRecentEntryDelete: null,
 							defaultRecentEntryProposalProvider: function(onItem){
-								self._routesDeferred.then(function(){
-									
-									var ret = [];
+
+									var result = [];
 									self._routesList.forEach(function(route){
 										if(!route) return;
-										ret.push({
+										result.push({
 											type: "proposal", //$NON-NLS-0$
 											label: route,
 											value: route
 										});
 									});
-									
-									onItem(ret);
-								});
+									onItem(result);
 							}
 						});
-						
+
+						self._hostDropdown._recentEntryButton.disabled = true;
+
 						self._hostInput = self._hostDropdown.getTextInputNode();
 	//					self._hostInput.value = self._manifestApplication.host || self._manifestApplication.name || "";
 						
@@ -455,7 +623,7 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 				    		self._hostInput.value = self._manifestApplication.host;
 				    	}
 				    	addListener(self._hostInput, self._manifestApplication.host);
-						
+
 						var selectedCloud = self._clouds[self._clouds.length > 1 ? self._cloudsDropdown.selectedIndex : 0];
 						self._loadTargets(selectedCloud);
 						
@@ -476,6 +644,11 @@ define(['i18n!cfui/nls/messages', 'orion/selection', 'orion/widgets/input/ComboT
 					}
 					
 					if(!self._appsInput.value){
+						setValid(false);
+						return;
+					}
+					
+					if(!self._domainsDropdown.value){
 						setValid(false);
 						return;
 					}

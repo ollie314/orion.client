@@ -10,26 +10,18 @@
 	<script src="../requirejs/require.js"></script>
 	<script>
 		/*eslint-env browser, amd*/
-		require({
-			baseUrl: "..",
-			paths: {
-				text: "requirejs/text",
-				i18n: "requirejs/i18n",
-				domReady: "requirejs/domReady",
-				gcli: "gcli/gcli",
-				util: "gcli/util"
-			}
+		require(["../orion/require-config.js"], function(config){
+			require(["shell/shellPage"], null, config.errback);
 		});
-		require(["shell/shellPage"]);
 	</script>
 </head>
 	<body id="orion-shellPage" class="orionPage">
-		<div id="sideMenu" class="sideMenu"></div>
+		<nav id="sideMenu" class="sideMenu"></nav>
 		<div id="pageContent" class="content-fixedHeight">
 			<div id="sideMenuToggle" class="sideMenuToggle"></div>
 			<div class="fixedToolbarHolder mainpane mainPanelLayout">
-				<div class="mainToolbar toolComposite" id="pageToolbar"></div>
-				<div id="mainNode" class="toolbarTarget pageLayoutTarget toolbarTarget-toolbarHidden">
+				<div class="mainToolbar toolComposite toolbarLayout" id="pageToolbar"></div>
+				<div id="mainNode" class="toolbarTarget pageLayoutTarget">
 					<div class="shell-output" id="shell-output"></div>
 					<div class="shell-input" id="shell-input"></div>
 				</div>

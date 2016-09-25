@@ -30,12 +30,61 @@ define([
 	var headers = {
 		name: "Orion Git Support",
 		version: "1.0",
-		description: "This plugin provides Git Support to the Orion File Service.",
+		description: "This plug-in provides Git Support to the Orion File Service.",
 		login: login
 	};
 	var GIT_TIMEOUT = 60000;
 
 	var provider = new PluginProvider(headers);
+	
+	provider.registerService("orion.edit.blamer", {
+		computeBlame: function(editorContext, context) {
+			var wrappedResult = new Deferred();
+			gitClient.getGitBlame(context.metadata.Git.BlameLocation).then(function(response) {
+				var annotations = [];
+				Deferred.all(annotations, function(error) {
+					return {
+						_error: error
+					};
+				}).then(function() {
+					var commits = response.Children;
+					commits.sort(function compare(a, b) {
+						if (a.Time < b.Time) {
+							return 1;
+						}
+						if (a.Time > b.Time) {
+							return -1;
+						}
+						return 0;
+					});
+					for (var i = 0; i < commits.length; i++) {
+						for (var j = 0; j < commits[i].Children.length; j++) {
+							var range = commits[i].Children[j];
+							var c = commits[i];
+							range.AuthorName = c.AuthorName;
+							range.AuthorEmail = c.AuthorEmail;
+							range.CommitterName = c.CommitterName;
+							range.CommitterEmail = c.CommitterEmail;
+							range.Message = c.Message;
+							range.AuthorImage = c.AuthorImage;
+							range.Name = c.Name;
+							range.Time = new Date(c.Time).toLocaleString();
+							range.Shade = (1 / (commits.length + 1)) * (commits.length - i + 1);
+							range.CommitLink = "{+OrionHome}/git/git-repository.html#" + c.CommitLocation + "?page=1"; //$NON-NLS-1$ //$NON-NLS-2$
+							annotations.push(range);
+						}
+					}
+					wrappedResult.resolve(annotations);
+				});
+			});
+			return wrappedResult;
+		}
+	}, {
+		name: "Git Blame",
+		validationProperties: [
+			{source: "Git", variableName: "Git"} //$NON-NLS-1$ //$NON-NLS-2$
+		]
+	});
 
 	// Git category for contributed links
 
@@ -279,7 +328,7 @@ define([
 	var service = new GitFileImpl(gitBase);
 
 	provider.registerService("orion.core.file", service, {
-		Name: 'Git File System',
+		Name: gitmessages["GitFileSysName"],
 		top: gitBase,
 		pattern: gitBase
 	});
@@ -441,6 +490,8 @@ define([
 					if(clone.GitUrl){
 						var gitInfo = parseGitUrl(clone.GitUrl);
 						deferred.resolve({Type: "git", Location: removeUserInformation(clone.GitUrl), Name: (gitInfo.repoName || clone.Name) + " at " + gitInfo.serverName});
+					} else {
+						deferred.reject();
 					}
 				},deferred.reject, deferred.progress
 			);

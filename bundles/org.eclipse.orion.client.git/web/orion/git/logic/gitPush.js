@@ -94,22 +94,28 @@ define([
 					} else if (!commandInvocation.optionsRequested){
 						var gitPreferenceStorage = new GitPreferenceStorage(serviceRegistry);
 						gitPreferenceStorage.isEnabled().then(
-							function(isEnabled){
-								if(isEnabled){
-									if (jsonData.JsonData.User)
-										commandInvocation.parameters = new mCommandRegistry.ParametersDescription([new mCommandRegistry.CommandParameter("sshpassword", "password", messages['Password:']), new mCommandRegistry.CommandParameter("saveCredentials", "boolean", messages["Don't prompt me again:"])], {hasOptionalParameters: true}); //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-									else
-										commandInvocation.parameters = new mCommandRegistry.ParametersDescription([new mCommandRegistry.CommandParameter("sshuser", "text", messages['User Name:']), new mCommandRegistry.CommandParameter("sshpassword", "password", messages['Password:']), new mCommandRegistry.CommandParameter("saveCredentials", "boolean", messages["Don't prompt me again:"])], {hasOptionalParameters: true}); //$NON-NLS-5$ //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-								} else {
-									if (jsonData.JsonData.User)
-										commandInvocation.parameters = new mCommandRegistry.ParametersDescription([new mCommandRegistry.CommandParameter("sshpassword", "password", messages['Password:'])], {hasOptionalParameters: true}); //$NON-NLS-1$ //$NON-NLS-0$
-									else
-										commandInvocation.parameters = new mCommandRegistry.ParametersDescription([new mCommandRegistry.CommandParameter("sshuser", "text", messages['User Name:']), new mCommandRegistry.CommandParameter("sshpassword", "password", messages['Password:'])], {hasOptionalParameters: true}); //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-0$
+							function(isStorageEnabled) {
+								var parameters = [];
+								if (!jsonData.JsonData.User) {
+									parameters.push(new mCommandRegistry.CommandParameter("sshuser", "text", messages['User Name:'])); //$NON-NLS-1$ //$NON-NLS-0$
 								}
-								
+								parameters.push(new mCommandRegistry.CommandParameter("sshpassword", "password", messages['Password:'])); //$NON-NLS-1$ //$NON-NLS-0$
+								if (jsonData.JsonData.GitHubAuth) {
+									var listener;
+									(function(authUrl) {
+										listener = new mCommandRegistry.CommandEventListener("click", function(event, commandInvocation) { //$NON-NLS-0$
+											window.location = authUrl;
+										});
+									})(jsonData.JsonData.GitHubAuth + "?ref=" + encodeURIComponent(window.location.href)); //$NON-NLS-0$
+									parameters.push(new mCommandRegistry.CommandParameter("gitAuth", "button", null, "Authorize with GitHub", null, listener)); //$NON-NLS-1$ //$NON-NLS-0$
+								}
+								if (isStorageEnabled) {
+									parameters.push(new mCommandRegistry.CommandParameter("saveCredentials", "boolean", messages["Don't prompt me again:"])); //$NON-NLS-1$ //$NON-NLS-0$
+								}
+								commandInvocation.parameters = new mCommandRegistry.ParametersDescription(parameters, {hasOptionalParameters: true});
 								commandInvocation.errorData = jsonData.JsonData;
 								commandInvocation.errorData.failedOperation = jsonData.failedOperation;
-								commandService.collectParameters(commandInvocation,sshSlideoutCloseCallback);
+								commandService.collectParameters(commandInvocation, sshSlideoutCloseCallback);
 							}
 						);
 					} else {
@@ -146,7 +152,7 @@ define([
 										var display = {};
 										display.HTML = true;
 										display.Severity = jsonData.Severity || "Error"; //$NON-NLS-0$
-										if (display.Severity != "Ok" && display.Severity != "Normal") {
+										if (display.Severity !== "Ok") {
 											var result = jsonData.Updates.length ? "<b>" +  messages["PushResult"] + "</b>\n" : ""; //$NON-NLS-0$ //$NON-NLS-1$
 											result += "<table class=\"gitPushUpdates\">"; //$NON-NLS-0$
 											jsonData.Updates.forEach(function (update) {
@@ -161,6 +167,7 @@ define([
 											}
 											display.Message = "<span class=\"gitPushResult\">" + result + "</span>"; //$NON-NLS-0$ //$NON-NLS-1$
 										} else {
+											display.HTML = false;
 											display.Message = i18nUtil.formatMessage(messages["PushingRemoteSucceeded"], name); //$NON-NLS-0$ 
 											var isGerrit = name.split('/')[1];
 											if (isGerrit === "for") {

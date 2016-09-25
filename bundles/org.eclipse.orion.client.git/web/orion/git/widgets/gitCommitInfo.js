@@ -17,8 +17,9 @@ define([
 	'orion/URITemplate',
 	'orion/i18nUtil',
 	'orion/git/util',
-	'orion/objects'
-], function(require, messages, URITemplate, i18nUtil, util, objects) {
+	'orion/objects',
+	'orion/bidiUtils'
+], function(require, messages, URITemplate, i18nUtil, util, objects, bidiUtils) {
 	
 	var commitTemplate = new URITemplate("git/git-repository.html#{,resource,params*}?page=1"); //$NON-NLS-0$	
 	
@@ -53,10 +54,10 @@ define([
 			}
 			
 			function createSection(parent) {
-				var section = document.createElement("div"); //$NON-NLS-0$
-				if (!that.simple) section.classList.add("gitCommitSection"); //$NON-NLS-0$
-				parent.appendChild(section);
-				return section;
+				var newSection = document.createElement("div"); //$NON-NLS-0$
+				if (!that.simple) newSection.classList.add("gitCommitSection"); //$NON-NLS-0$
+				parent.appendChild(newSection);
+				return newSection;
 			}
 			
 			function createImage(parent) {
@@ -64,7 +65,7 @@ define([
 					if (commit.AuthorImage) {
 						var image = new Image();
 						image.src = commit.AuthorImage;
-						image.name = commit.AuthorName;
+						image.alt = "";
 						image.className = "git-author-icon"; //$NON-NLS-0$
 						parent.appendChild(image);
 						if (commit.incoming) image.classList.add("incoming"); //$NON-NLS-0$
@@ -84,8 +85,11 @@ define([
 					}
 				}
 			}
-			
+			var holderDiv = document.createElement("div"); //$NON-NLS-0$
+			holderDiv.className = "commitInfoHolder"; //$NON-NLS-0$
+			var tableDiv = document.createElement("div"); //$NON-NLS-0$
 			var table = document.createElement("table"); //$NON-NLS-0$
+			tableDiv.appendChild(table);
 			var tableBody = document.createElement("tbody"); //$NON-NLS-0$
 			var row = document.createElement("tr"); //$NON-NLS-0$
 			tableBody.appendChild(row);
@@ -112,6 +116,9 @@ define([
 					link.className = "gitCommitTitle"; //$NON-NLS-0$
 				}
 				var text = headerMessage;
+				if (bidiUtils.isBidiEnabled()) {
+					link.dir = bidiUtils.getTextDirection(text);
+				}
 				if (headerMessage.length < commit.Message.length) {
 					 text += "..."; //$NON-NLS-0$
 				}
@@ -132,6 +139,9 @@ define([
 					restSpan.textContent = commit.Message.substring(headerMessage.length);
 					fullMessage.appendChild(restSpan);
 				}
+				if (bidiUtils.isBidiEnabled()) {
+					fullMessage.dir = bidiUtils.getTextDirection(fullMessage.textContent);
+				}
 				detailsDiv.appendChild(fullMessage);
 			}
 			
@@ -141,12 +151,20 @@ define([
 				section = createSection(detailsDiv);
 			}
 			if (displayAuthor) {
-				var authorName = this.showAuthorEmail ? i18nUtil.formatMessage(messages["nameEmail"], commit.AuthorName, commit.AuthorEmail) : commit.AuthorName;
+				var commitAuthorName = commit.AuthorName || '';
+				if (bidiUtils.isBidiEnabled()) {
+					commitAuthorName = bidiUtils.enforceTextDirWithUcc(commitAuthorName);
+				}
+				var authorName = this.showAuthorEmail ? i18nUtil.formatMessage(messages["nameEmail"], commitAuthorName, commit.AuthorEmail) : commitAuthorName;
 				createInfo(detailsDiv, ["", "on"], [authorName, new Date(commit.Time).toLocaleString()]); //$NON-NLS-1$ //$NON-NLS-0$
 			}
 			
 			if (displayCommitter) {
-				var committerName = this.showCommitterEmail ? i18nUtil.formatMessage(messages["nameEmail"], commit.CommitterName, commit.CommitterEmail) : commit.CommitterName;
+				var commitCommitterName = commit.CommitterName || '';
+				if (bidiUtils.isBidiEnabled()) {
+					commitCommitterName = bidiUtils.enforceTextDirWithUcc(commitCommitterName);
+				}
+				var committerName = this.showCommitterEmail ? i18nUtil.formatMessage(messages["nameEmail"], commitCommitterName, commit.CommitterEmail) : commitCommitterName;
 				createInfo(detailsDiv, "committedby", committerName); //$NON-NLS-0$
 			}
 			
@@ -202,6 +220,9 @@ define([
 					});
 					branchNameSpan.textContent = branchName;
 					branchNameSpan.className = "gitCommitBranch"; //$NON-NLS-0$
+					if (bidiUtils.isBidiEnabled()) {
+						branchNameSpan.dir = bidiUtils.getTextDirection(branchName);
+					}
 					branches.appendChild(branchNameSpan);
 				});
 			}
@@ -212,7 +233,11 @@ define([
 				commit.Tags.forEach(function (tag) {
 					tag.parent = commit;
 					var tagSpan = document.createElement("span"); //$NON-NLS-0$
-					tagSpan.textContent = tag.Name;
+					var tagName = tag.Name;
+					if (bidiUtils.isBidiEnabled()) {
+						tagName = bidiUtils.enforceTextDirWithUcc(tagName);
+					}
+					tagSpan.textContent = tagName;
 					tagSpan.className = "gitCommitTag"; //$NON-NLS-0$
 					tags.appendChild(tagSpan);
 					
@@ -234,8 +259,12 @@ define([
 				actions.appendChild(moreButton);
 				detailsDiv.appendChild(actions);
 			}
-			
-			that.parent.appendChild(table);
+
+			if(commit.graphSvg){
+				holderDiv.appendChild(commit.graphSvg);
+			}
+			holderDiv.appendChild(tableDiv);
+			that.parent.appendChild(holderDiv);
 		}
 	});
 	

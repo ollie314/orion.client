@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2011, 2012 IBM Corporation and others.
+ * Copyright (c) 2011, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -19,6 +19,8 @@ define(['require', 'orion/Deferred', 'orion/serviceregistry', 'orion/preferences
 		if (once) {
 			return once;
 		}
+		var pageLoader = require.defined("orion/splash") && require("orion/splash").getPageLoader(); //$NON-NLS-1$
+		if (pageLoader) pageLoader.nextStep();
 		once = new Deferred();
 		
 		// initialize service registry and EAS services
@@ -27,24 +29,25 @@ define(['require', 'orion/Deferred', 'orion/serviceregistry', 'orion/preferences
 		// This is code to ensure the first visit to orion works
 		// we read settings and wait for the plugin registry to fully startup before continuing
 		var preferences = new mPreferences.PreferencesService(serviceRegistry);
-		return preferences.getPreferences("/plugins").then(function(pluginsPreference) { //$NON-NLS-0$
+		return preferences.get("/plugins").then(function(pluginsPreference) { //$NON-NLS-0$
 			var configuration = {plugins:{}};
-			pluginsPreference.keys().forEach(function(key) {
+			Object.keys(pluginsPreference).forEach(function(key) {
 				var url = require.toUrl(key);
 				configuration.plugins[url] = pluginsPreference[key];
 			});
-			var pluginRegistry = new mPluginRegistry.PluginRegistry(serviceRegistry, configuration);	
+			var pluginRegistry = new mPluginRegistry.PluginRegistry(serviceRegistry, configuration);
+			if (pageLoader) {
+				pageLoader.setPluginRegistry(pluginRegistry);
+			}
 			return pluginRegistry.start().then(function() {
 				if (serviceRegistry.getServiceReferences("orion.core.preference.provider").length > 0) { //$NON-NLS-0$
-					return preferences.getPreferences("/plugins", preferences.USER_SCOPE).then(function(pluginsPreference) { //$NON-NLS-0$
+					return preferences.get("/plugins", undefined, {scope: mPreferences.PreferencesService.USER_SCOPE}).then(function(pluginsPreference) { //$NON-NLS-0$
 						var installs = [];
-						pluginsPreference.keys().forEach(function(key) {
+						Object.keys(pluginsPreference).forEach(function(key) {
 							var url = require.toUrl(key);
 							if (!pluginRegistry.getPlugin(url)) {
-								installs.push(pluginRegistry.installPlugin(url,{autostart: "lazy"}).then(function(plugin) {
-									return plugin.update().then(function() {
-										return plugin.start({lazy:true});
-									});
+								installs.push(pluginRegistry.installPlugin(url,{autostart: "lazy"}).then(function(plugin) { //$NON-NLS-1$
+									return plugin.start({lazy:true});
 								}));
 							}
 						});	
@@ -68,11 +71,11 @@ define(['require', 'orion/Deferred', 'orion/serviceregistry', 'orion/preferences
 								}, 0);
 							});
 						} else {
-							localStorage.setItem("lastLogin", new Date().getTime()); //$NON-NLS-0$
+							localStorage.setItem("lastLogin", Date.now()); //$NON-NLS-0$
 						}
 					});
-					var lastLogin = localStorage.getItem("lastLogin");
-					if (!lastLogin || lastLogin < (new Date().getTime() - (15 * 60 * 1000))) { // 15 minutes
+					var lastLogin = localStorage.getItem("lastLogin"); //$NON-NLS-1$
+					if (!lastLogin || lastLogin < (Date.now() - (15 * 60 * 1000))) { // 15 minutes
 						return authPromise; // if returned waits for auth check before continuing
 					}
 				}
@@ -82,6 +85,7 @@ define(['require', 'orion/Deferred', 'orion/serviceregistry', 'orion/preferences
 					preferences: preferences,
 					pluginRegistry: pluginRegistry
 				};
+				if (pageLoader) pageLoader.nextStep();
 				once.resolve(result);
 				return result;
 			});

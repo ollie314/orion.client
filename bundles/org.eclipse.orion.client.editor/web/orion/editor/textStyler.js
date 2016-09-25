@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2010, 2012 IBM Corporation and others.
+ * Copyright (c) 2010, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made
  * available under the terms of the Eclipse Public License v1.0
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
@@ -246,6 +246,23 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 					this._initPatterns(this._patternManager, newBlock);
 				}.bind(this));
 		},
+		getBlockCommentDelimiters: function(index) {
+			var languageBlock = this._getLanguageBlock(index);
+			var blockPatterns = languageBlock.blockPatterns;
+			if (blockPatterns) {
+				var COMMENT_BLOCK = "comment.block"; //$NON-NLS-0$
+				for (var i = 0; i < blockPatterns.length; i++) {
+					var current = blockPatterns[i].pattern;
+					var name = current.name || current.contentName;
+					if (name && name.indexOf(COMMENT_BLOCK) !== -1) {
+						if (current.begin && current.end && current.begin.literal && current.end.literal) {
+							return [current.begin.literal, current.end.literal];
+						}
+					}
+				}
+			}
+			return ["", ""];
+		},
 		getBlockContentStyleName: function(block) {
 			return block.pattern.pattern.contentName || block.pattern.pattern.name;
 		},
@@ -268,6 +285,15 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 		},
 		getBlockFoldBounds: function(block, model) {
 			return {start: block.start, end: block.end};
+		},
+		getBlockOverrideStyles: function(block, text, index, _styles) {
+			/* if the block's pattern is a single-line regex with capture(s) then compute the styles for the capture(s) */
+			if (block.pattern.regex && block.pattern.pattern.captures && this._containsCaptureRegex.test(block.pattern.regex)) {
+				var match = this._findMatch(block.pattern.regex, text, 0);
+				if (match) {
+					this._getCaptureStyles(match, block.pattern.pattern.captures, index, _styles);
+				}
+			}
 		},
 		getBlockStartStyle: function(block, text, index, _styles) {
 			/* pattern-defined blocks specify a start style by either a capture or name */
@@ -319,6 +345,35 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 		getContentType: function() {
 			return this._contentType;
 		},
+		getLineCommentDelimiter: function(index) {
+			var COMMENT_LINE = "comment.line"; //$NON-NLS-0$
+			var languageBlock = this._getLanguageBlock(index);
+			var linePatterns = languageBlock.linePatterns;
+			if (linePatterns) {
+				for (var i = 0; i < linePatterns.length; i++) {
+					var current = linePatterns[i].pattern;
+					var name = current.name;
+					if (name && name.indexOf(COMMENT_LINE) !== -1) {
+						if (current.match && current.match.literal) {
+							return current.match.literal;
+						}
+					}
+				}
+			}
+			var blockPatterns = languageBlock.blockPatterns;
+			if (blockPatterns) {
+				for (i = 0; i < blockPatterns.length; i++) {
+					current = blockPatterns[i].pattern;
+					name = current.name || current.contentName;
+					if (name && name.indexOf(COMMENT_LINE) !== -1) {
+						if (current.begin && current.begin.literal) {
+							return current.begin.literal;
+						}
+					}
+				}
+			}
+			return "";
+		},
 		parse: function(text, offset, startIndex, block, _styles, ignoreCaptures) {
 			if (!text) {
 				return;
@@ -362,8 +417,8 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 				/* apply the style */
 				var start = current.result.index;
 				var end;
-				var substyles = [];
 				if (current.pattern.regex) {	/* line pattern defined by a "match" */
+					var substyles = [];
 					result = current.result;
 					end = start + result[0].length;
 					var tokenStyle = {start: offset + start, end: offset + end, style: current.pattern.pattern.name};
@@ -413,8 +468,8 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 				regex.lastIndex = regex.oldLastIndex;
 			});
 		},
-		/** @callback */
 		setStyler: function(styler) {
+			this._styler = styler;
 		},
 		verifyBlock: function(baseModel, text, ancestorBlock, changeCount) {
 			var result = null;
@@ -578,6 +633,21 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 				}
 			}
 		},
+		_getLanguageBlock: function(index) {
+			/* Returns the parent block that dictates the language in effect at index */
+			var block = this._styler.getBlockAtIndex(index);
+			var embeddedNameRegex = /^source\..+\.embedded/;
+			while (block) {
+				if (block.pattern) {
+					var pattern = block.pattern.pattern;
+					if (embeddedNameRegex.test(pattern.name || pattern.contentName)) {
+						return block;
+					}
+				}
+				block = block.parent;
+			}
+			return this._styler.getRootBlock();
+		},
 		_initPatterns: function(patternManager, block) {
 			if (block.pattern && block.pattern.pattern.linePatterns) {
 				block.linePatterns = block.pattern.pattern.linePatterns;
@@ -667,6 +737,7 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 			}
 		},
 		_captureReferenceRegex: /\\(\d)/g,
+		_containsCaptureRegex: /\((?!\?:)/, //$NON-NLS-0$
 		_eolRegex: /$/,
 		_ignoreCaseRegex: /^\(\?i\)\s*/,
 		_linebreakRegex: /(.*)(?:[\r\n]|$)/g,
@@ -822,6 +893,12 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 		this._styler = styler;
 	}
 	TextStylerAccessor.prototype = {
+		getBlockCommentDelimiters: function(offset) {
+			return this._styler.getBlockCommentDelimiters(offset);
+		},
+		getLineCommentDelimiter: function(offset) {
+			return this._styler.getLineCommentDelimiter(offset);
+		},
 		getStyles: function(offset) {
 			return this._styler.getStyles(offset);
 		}
@@ -871,11 +948,11 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 		var charCount = model.getCharCount();
 		var rootBounds = {start: 0, contentStart: 0, end: charCount, contentEnd: charCount};
 		if (charCount >= 50000) {
-			var startTime = new Date().getTime();
+			var startTime = Date.now();
 		}
 		this._rootBlock = this._stylerAdapter.createBlock(rootBounds, this, model, null);
 		if (startTime) {
-			var interval = new Date().getTime() - startTime;
+			var interval = Date.now() - startTime;
 			if (interval > 10) {
 				mMetrics.logTiming(
 					"editor", //$NON-NLS-0$
@@ -924,6 +1001,12 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 		},
 		getBlockAtIndex: function(index) {
 			return this._findBlock(this._rootBlock, index);
+		},
+		getBlockCommentDelimiters: function(index) {
+			return this._stylerAdapter.getBlockCommentDelimiters(index);
+		},
+		getLineCommentDelimiter: function(index) {
+			return this._stylerAdapter.getLineCommentDelimiter(index);
 		},
 		getRootBlock: function() {
 			return this._rootBlock;
@@ -1221,6 +1304,24 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 				lineIndex = model.getLineAtOffset(s);
 				lineStart = model.getLineStart(lineIndex);
 				var blockSubstyles = this._getStyles(blocks[i], model, text.substring(lineStart - offset, e - offset), lineStart, s - lineStart);
+				var overrideStyles = [];
+				this._stylerAdapter.getBlockOverrideStyles(blocks[i], text.substring(s - offset, e - offset), s, overrideStyles);
+				if (overrideStyles.length) {
+					Array.prototype.push.apply(blockSubstyles, overrideStyles); /* append overrideStyles into blockSubstyles */
+					if (blockSubstyles.length !== overrideStyles.length) {
+						/* substyles came from both sources, so they need to be sorted together */
+						blockSubstyles.sort(function(a,b) {
+							if (a.start < b.start) {
+								return -1;
+							}
+							if (a.start > b.start) {
+								return 1;
+							}
+							return 0;
+						});
+					}
+				}
+
 				var blockStyleName = this._stylerAdapter.getBlockContentStyleName(blocks[i]);
 				if (blockStyleName) {
 					/*
@@ -1263,28 +1364,35 @@ define("orion/editor/textStyler", ['orion/editor/annotations', 'orion/editor/eve
 			this.destroy();
 		},
 		_onLineStyle: function(e) {
-			if (e.textView === this._view) {
-				e.style = this._getLineStyle(e.lineIndex);
+			if (this._rootBlock) {
+				if (e.textView === this._view) {
+					e.style = this._getLineStyle(e.lineIndex);
+				}
+				var offset = e.lineStart;
+				var model = e.textView.getModel();
+				if (model.getBaseModel) {
+					offset = model.mapOffset(offset);
+					var baseModel = model.getBaseModel();
+				}
+				e.ranges = this._getStyles(this._rootBlock, baseModel || model, e.lineText, offset, 0);
+
+				for (var i = e.ranges.length - 1; i >= 0; i--) {
+					var current = e.ranges[i];
+					if (current.style) {
+						current.style = {styleClass: current.style.replace(/\./g, " ")};
+						if (baseModel) {
+							var length = current.end - current.start;
+							current.start = model.mapOffset(current.start, true);
+							current.end = current.start + length;
+						}
+					} else {
+						e.ranges.splice(i, 1);
+					}
+				}
+			} else {
+				e.ranges = [];
 			}
 
-			var offset = e.lineStart;
-			var model = e.textView.getModel();
-			if (model.getBaseModel) {
-				offset = model.mapOffset(offset);
-				var baseModel = model.getBaseModel();
-			}
-
-			e.ranges = this._getStyles(this._rootBlock, baseModel || model, e.lineText, offset, 0);
-			e.ranges.forEach(function(current) {
-				if (baseModel) {
-					var length = current.end - current.start;
-					current.start = model.mapOffset(current.start, true);
-					current.end = current.start + length;
-				}
-				if (current.style) {
-					current.style = {styleClass: current.style.replace(/\./g, " ")};
-				}
-			});
 			if (this._isRenderingWhitespace()) {
 				this._spliceStyles(this._spacePattern, e.ranges, e.lineText, e.lineStart);
 				this._spliceStyles(this._tabPattern, e.ranges, e.lineText, e.lineStart);

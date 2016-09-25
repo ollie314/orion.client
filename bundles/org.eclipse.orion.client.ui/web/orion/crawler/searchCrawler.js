@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2009, 2012 IBM Corporation and others.
+ * Copyright (c) 2009, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -14,7 +14,7 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 		function(messages, i18nUtil, mSearchUtils, mContentTypes, mUiUtils, Deferred) {
 	
 	var DEBUG = false;
-	var _folderFilter = [".git"];
+	var _folderFilter = [".git", "node_modules", ".cvs"];
 	/**
 	 * SearchCrawler is an alternative when a file service does not provide the search API.
 	 * It assumes that the file client at least provides the fetchChildren and read APIs.
@@ -37,7 +37,7 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 		this._fetchChildrenCallBack = options && options.fetchChildrenCallBack;
 		this._searchParams = searchParams;
 		this.searchHelper = (this._searchOnName || this._buildSkeletonOnly || !this._searchParams) ? null: mSearchUtils.generateSearchHelper(searchParams);
-		this._location = options && options.location;
+		this._location = searchParams ? searchParams.resource : options && options.location;
 		this._childrenLocation = options && options.childrenLocation ? options.childrenLocation : this._location;   
 		this._reportOnCancel = options && options.reportOnCancel;
 		this._visitSingleFile = options && options.visitSingleFile;
@@ -65,22 +65,25 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 		this._onSearchComplete = onComplete;
 		this._cancelled = false;
 		this._deferredArray = [];
-		this.contentTypeService.getContentTypes().then(function(ct) {
+		var result;
+		return this.contentTypeService.getContentTypes().then(function(ct) {
 			this.contentTypesCache = ct;
 			var crawler = this;
-			this._visitRecursively(this._childrenLocation).then(function(){
+			return this._visitRecursively(this._childrenLocation).then(function(){
 				//We only report the result on the completion in two cases: 1.If there is no cancellation 2.If the option reportResultOnCancel is true
 				if(!crawler._cancelled || crawler._reportOnCancel){//If it is in simulating mode we need to report the result anyway
-					crawler._reportResult();
+					result = crawler._reportResult();
 				} 
 				//Normally if a cancellation happens it goes to error handler. But in corner cases that deferred.resolve is faster than deferred.cancel we need to capture the case
 				if(crawler._cancelled) {
 					crawler._HandleStatus({name: "Cancel"}); //$NON-NLS-0$
 				}
+				return new Deferred().resolve(result);
 			}.bind(crawler),
 			function(error){
-				crawler._reportResult();
+				result = crawler._reportResult();
 				crawler._HandleStatus(error); 
+				return new Deferred().resolve(result);
 			}.bind(crawler));
 		}.bind(this));
 	};
@@ -90,13 +93,10 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 	 * @param {String} queryStr The query string. This is temporary for now. The format is "?sort=Path asc&rows=40&start=0&q=keyword+Location:/file/e/bundles/\*"
 	 * @param {Function} onComplete The callback function on search complete. The array of hit file locations are passed to the callback.
 	 */
-	SearchCrawler.prototype.searchName = function(searchParams, onComplete){
+	SearchCrawler.prototype.searchName = function(searchParams){
 		if(searchParams){
 			this._searchParams = searchParams;
 			this.searchHelper = mSearchUtils.generateSearchHelper(searchParams, true);
-		}
-		if(onComplete){
-			this.onSearchNameComplete = onComplete;
 		}
 		var results = [];
 		this._cancelled = false;
@@ -119,9 +119,9 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 				}
 			}
 			var response = {numFound: results.length, docs: results };
-			this.onSearchNameComplete({response: response});
+			return new Deferred().resolve({response: response});
 		} else {
-			this.onSearchNameComplete({response: {numFound: 0, docs: []}});
+			return new Deferred().resolve({response: {numFound: 0, docs: []}});
 		}
 	};
 	
@@ -141,9 +141,6 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 			that._visitRecursively(that._childrenLocation).then(function(){ //$NON-NLS-0$
 					that._buildingSkeleton = false;
 					onComplete();
-					if(that.searchHelper && !that._buildSkeletonOnly){
-						that.searchName();
-					}
 			});
 		});
 	};
@@ -176,8 +173,23 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 		return this._cancelled;
 	};
 	
+	/**
+	 * @name SearchCrawler.prototype._contains
+	 * @description Checks to see if the given string item is in the given array of strings - ignoring case
+	 * @function
+	 * @private
+	 * @param {Array.<String>} array The array to check
+	 * @param {String} item The item to check for
+	 * @returns {Boolean} Returns if the string is found in the array, ignoring case
+	 */
 	SearchCrawler.prototype._contains = function(array, item){
-		return (array || []).indexOf(item) !== -1;
+		if(Array.isArray(array) && typeof item === 'string') {
+			var val = item.toLocaleLowerCase();
+			return array.some(function(elt) {
+				return elt === val;
+			});
+		}
+		return false;
 	};
 	
 	SearchCrawler.prototype._sort = function(fileArray){
@@ -212,7 +224,9 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 	SearchCrawler.prototype._reportResult = function(){
 		this._sort(this.fileLocations);
 		var response = {numFound: this.fileLocations.length, docs: this.fileLocations };
-		this._onSearchComplete({response: response});
+		var result = {response: response};
+		this._onSearchComplete(result);
+		return result;
 	};
 		
 	SearchCrawler.prototype._sortOnNameSingle = function(a, b){
@@ -318,9 +332,6 @@ define(['i18n!orion/crawler/nls/messages', 'orion/i18nUtil', 'orion/searchUtils'
 	SearchCrawler.prototype._buildSingleSkeleton = function(fileObj){
 		this.addTotalCounter();
 		this.fileSkeleton.push(fileObj);
-		if(this.searchHelper && !this._buildSkeletonOnly && this._totalCounter%100 === 0){
-			this.searchName();
-		}
 		var df = new Deferred();
 		df.resolve(this._totalCounter);
 		return df;

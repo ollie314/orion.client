@@ -91,7 +91,7 @@ define([
  		
  		if (item.href) {
 			this._createLink(linkContents, item.href, contentsNode);
- 		} else if (item.line || item.column || item.start) {
+ 		} else if (item.line || item.column || item.start || item.end) {
  			var href = new URITemplate("#{,resource,params*}").expand({resource: this.title, params: item}); //$NON-NLS-0$
 			this._createLink(linkContents, href, contentsNode);
  			item.outlineLink = href;
@@ -372,6 +372,14 @@ define([
 			
 			this._outlineNode = document.createElement("div"); //$NON-NLS-0$
 			this._outlineNode.classList.add("outlineNodeWrapper"); //$NON-NLS-0$
+			this._outlineNode.addEventListener("keydown", function(e){
+				if (e.keyCode === lib.KEY.ESCAPE || e.keyCode === lib.KEY.ENTER) {
+					if (this._slideout.getPreviousActiveElement()) {
+						this.hide();
+					}
+				}
+			}.bind(this), false);
+			
 			this._wrapperNode.appendChild(this._outlineNode);
 			
 			this._toolbar = toolbar;
@@ -583,19 +591,18 @@ define([
 		
 			input.addEventListener("keydown", function (e) { //$NON-NLS-0$
 				var navHandler = null;
-				var firstNode = null;
+				var nodes = null;
 				if (e.keyCode === lib.KEY.DOWN)	{
-					input.blur();
 					navHandler = this.explorer.getNavHandler();
-					navHandler.focus();
-					if (navHandler.getTopLevelNodes()) {
-						firstNode = navHandler.getTopLevelNodes()[0];
-						navHandler.cursorOn(firstNode, false, true);
-						if (firstNode.isNotSelectable) {
+					nodes = navHandler.getTopLevelNodes();
+					if (nodes){
+						input.blur();
+						navHandler.focus();
+						navHandler.cursorOn(nodes[0], false, true);
+						if (nodes[0].isNotSelectable) {
 							navHandler.iterate(true, false, false, true);
 						}
 					}
-					
 					//prevent the browser's default behavior of automatically scrolling 
 					//the outline view down because the DOWN key was pressed
 					if (e.preventDefault) {
@@ -609,6 +616,17 @@ define([
 							this._slideout.getPreviousActiveElement().focus();
 						}
 						this.hide();
+					}
+				} else if (e.keyCode === lib.KEY.ENTER) {
+					navHandler = this.explorer.getNavHandler();
+					nodes = navHandler.getTopLevelNodes();
+					if (nodes){
+						input.blur();
+						navHandler.focus();
+						navHandler.cursorOn(nodes[0], false, true);
+						if (nodes[0].isNotSelectable) {
+							navHandler.iterate(true, false, false, true);
+						}
 					}
 				}
 			}.bind(this), false);
@@ -668,7 +686,6 @@ define([
 		this._preferences = options.preferences;
 		EventTarget.attach(this);
 		this._serviceRegistration = this._serviceRegistry.registerService("orion.edit.outline", this); //$NON-NLS-0$
-		this._outlinePref = this._preferences.getPreferences("/edit/outline"); //$NON-NLS-0$
 		this._provider = new Deferred();
 		this._providerResolved = false;
 
@@ -680,11 +697,11 @@ define([
 			this.providers = providers;
 			// Check pref to see if user has chosen a preferred outline provider
 			var self = this;
-			Deferred.when(this._outlinePref, function(pref) {
+			this._preferences.get("/edit/outline").then(function(pref) { //$NON-NLS-1$
 				var provider;
 				for (var i=0; i < providers.length; i++) {
 					provider = providers[i];
-					if (pref.get("outlineProvider") === providers[i].getProperty("id")) { //$NON-NLS-1$ //$NON-NLS-0$
+					if (pref["outlineProvider"] === providers[i].getProperty("id")) { //$NON-NLS-1$ //$NON-NLS-0$
 						break;
 					}
 				}
@@ -701,9 +718,7 @@ define([
 			this._providerResolved = true;
 			var id = provider.getProperty("id"); //$NON-NLS-0$
 			if (id) {
-				this._outlinePref.then(function(pref) {
-					pref.put("outlineProvider", id); //$NON-NLS-0$
-				});
+				this._preferences.put("/edit/outline", {outlineProvider: id}); //$NON-NLS-1$
 			}
 		},
 

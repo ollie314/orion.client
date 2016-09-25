@@ -10,6 +10,7 @@
 /*eslint-env browser, amd*/
 define({//Default message bundle
 	"Compare": "Compare", //$NON-NLS-0$  //$NON-NLS-1$
+	"GitFileSysName": "Git File System", //$NON-NLS-0$  //$NON-NLS-1$
 	"View the side-by-side compare": "View the side-by-side compare", //$NON-NLS-0$  //$NON-NLS-1$
 	"WorkingDirVer": "Open Working Directory", //$NON-NLS-0$  //$NON-NLS-1$
 	"Working Directory": "Working Directory", //$NON-NLS-0$  //$NON-NLS-1$
@@ -27,9 +28,7 @@ define({//Default message bundle
 	"commit: 0": "commit: ${0}", //$NON-NLS-0$  //$NON-NLS-1$
 	"parent: 0": "parent: ${0}", //$NON-NLS-0$  //$NON-NLS-1$
 	"authored by 0 (1) on 2": "authored by ${0} <${1}> on ${2}", //$NON-NLS-0$  //$NON-NLS-1$
-	"committed by 0 (1)": "committed by ${0} <${1}>", //$NON-NLS-0$  //$NON-NLS-1$
 	"committedby": "committed by ", //$NON-NLS-0$  //$NON-NLS-1$
-	"authoredby": "authored by ", //$NON-NLS-0$  //$NON-NLS-1$
 	"on": " on ", //$NON-NLS-0$  //$NON-NLS-1$ //Used for the format as "authorName on date"
 	"nameEmail": "${0} <${1}>", //$NON-NLS-0$  //$NON-NLS-1$
 	"Tags:": "Tags:", //$NON-NLS-0$  //$NON-NLS-1$
@@ -115,6 +114,7 @@ define({//Default message bundle
 	"Writing .gitignore rules" : "Writing .gitignore rules", //$NON-NLS-0$  //$NON-NLS-1$ 
 	"Save Patch": "Save Patch", //$NON-NLS-0$  //$NON-NLS-1$
 	"Unstage the change": "Unstage the change", //$NON-NLS-0$  //$NON-NLS-1$
+	"EmptyUnstageWarning": "Please select at least one file to unstage", //$NON-NLS-0$  //$NON-NLS-1$ 
 	"Unstaging...": "Unstaging...", //$NON-NLS-0$  //$NON-NLS-1$
 	"Undo": "Undo", //$NON-NLS-0$  //$NON-NLS-1$
 	"UndoTooltip": "Revert this commit, keeping all changed files and not making any changes to the working directory.", //$NON-NLS-0$  //$NON-NLS-1$
@@ -197,6 +197,28 @@ define({//Default message bundle
 	"Commits for \"${0}\" branch": "Commits for ${0}", //$NON-NLS-0$  //$NON-NLS-1$
 	"Commits for \"${0}\" branch against": "Commits for \"${0}\" branch against", //$NON-NLS-0$  //$NON-NLS-1$
 	"Add Remote": "Add Remote", //$NON-NLS-0$  //$NON-NLS-1$
+	"Are you sure you want to delete submodule ${0}?":"Are you sure you want to delete submodule ${0}?",//$NON-NLS-0$  //$NON-NLS-1$
+	"Delete submodule from its parent": "Delete submodule from its parent", //$NON-NLS-0$  //$NON-NLS-1$
+	"Delete Submodule": "Delete Submodule", //$NON-NLS-0$  //$NON-NLS-1$
+	"Deleting submodule": "Deleting submodule", //$NON-NLS-0$  //$NON-NLS-1$
+	"Submodule deleted": "Submodule deleted", //$NON-NLS-0$  //$NON-NLS-1$
+	"Sync submodules for the repository": "Sync submodules for the repository", //$NON-NLS-0$  //$NON-NLS-1$
+	"Sync Submodules": "Sync Submodules", //$NON-NLS-0$  //$NON-NLS-1$
+	"Submodules Synced": "Submodules Synced", //$NON-NLS-0$  //$NON-NLS-1$
+	"Syncing submodules": "Syncing submodules", //$NON-NLS-0$  //$NON-NLS-1$
+	"Update submodules for the repository": "Update submodules for the repository", //$NON-NLS-0$  //$NON-NLS-1$
+	"Update Submodules": "Update Submodules", //$NON-NLS-0$  //$NON-NLS-1$
+	"Updating submodules": "Updating submodules", //$NON-NLS-0$  //$NON-NLS-1$
+	"Submodules updated": "Submodules updated", //$NON-NLS-0$  //$NON-NLS-1$
+	"Add git submodule": "Add git submodule", //$NON-NLS-0$  //$NON-NLS-1$
+	"AddSubmodule": "Adding submodule: ${0} to repository: ${1}", //$NON-NLS-0$  //$NON-NLS-1$
+	"Adding submodule: ": "Adding submodule: ", //$NON-NLS-0$  //$NON-NLS-1$
+	"Add Submodule": "Add Submodule", //$NON-NLS-0$  //$NON-NLS-1$
+	"Add a submodule to this Git repository": "Add a submodule to this Git repository", //$NON-NLS-0$  //$NON-NLS-1$
+	"Missing submodule": "Missing submodule", //$NON-NLS-0$  //$NON-NLS-1$
+	"Added submodule": "Added submodule", //$NON-NLS-0$  //$NON-NLS-1$
+	"Missing Submodule Message": "Missing submodule, it is either removed or uninitialized", //$NON-NLS-0$  //$NON-NLS-1$
+	"Added Submodule Message": "Added submodule files that are not yet committed, to view the actual files please open its own repository", //$NON-NLS-0$  //$NON-NLS-1$
 	"Remote Name:": "Remote Name:", //$NON-NLS-0$  //$NON-NLS-1$
 	"Remote URI:": "Remote URI:", //$NON-NLS-0$  //$NON-NLS-1$
 	"Apply Patch": "Apply Patch", //$NON-NLS-0$  //$NON-NLS-1$
@@ -205,8 +227,9 @@ define({//Default message bundle
 	"Go to the git repository": "Open the Git Repository page for this file or folder.", //$NON-NLS-0$  //$NON-NLS-1$
 	"Clone Git Repository": "Clone Git Repository", //$NON-NLS-0$  //$NON-NLS-1$
 	"CloneGitRepositoryDialog": "Clone Git Repository", //$NON-NLS-0$  //$NON-NLS-1$
-	"Repository URL:": "Repository URL:", //$NON-NLS-0$  //$NON-NLS-1$
+	"Repository URL:": "Repository URL: ", //$NON-NLS-0$  //$NON-NLS-1$
 	"Existing directory:": "Existing folder:", //$NON-NLS-0$  //$NON-NLS-1$
+	"Clone submodules automatically": "Clone submodules automatically", //$NON-NLS-0$  //$NON-NLS-1$
 	"New folder:": "New folder:", //$NON-NLS-0$  //$NON-NLS-1$
 	"ChooseFolderDialog": "Choose a Folder", //$NON-NLS-0$  //$NON-NLS-1$
 	"Message:": "Message:", //$NON-NLS-0$  //$NON-NLS-1$
@@ -227,6 +250,7 @@ define({//Default message bundle
 	"Git Credentials": "Git Credentials", //$NON-NLS-0$  //$NON-NLS-1$
 	"Username:": "Username:", //$NON-NLS-0$  //$NON-NLS-1$
 	"Private key:": "Private key:", //$NON-NLS-0$  //$NON-NLS-1$
+	"AuthorizeWithGitHub": "Authorize with GitHub", //$NON-NLS-0$  //$NON-NLS-1$
 	"Passphrase (optional):": "Passphrase (optional):", //$NON-NLS-0$  //$NON-NLS-1$
 	"commit:": "commit: ", //$NON-NLS-0$  //$NON-NLS-1$
 	"parent:": "parent: ", //$NON-NLS-0$  //$NON-NLS-1$
@@ -286,6 +310,7 @@ define({//Default message bundle
 	"Removing remote branch: ": "Removing remote branch: ", //$NON-NLS-0$  //$NON-NLS-1$
 	"Delete Remote Branch": "Delete Remote Branch", //$NON-NLS-0$  //$NON-NLS-1$
 	"New Remote": "New Remote", //$NON-NLS-0$  //$NON-NLS-1$
+	"Gerrit": "Gerrit", //$NON-NLS-0$  //$NON-NLS-1$
 	"Git Remote": "Git Remote", //$NON-NLS-0$  //$NON-NLS-1$
 	"Go to Git Remote": "Open the remote Git Log page for this file or folder.", //$NON-NLS-0$  //$NON-NLS-1$
 	"Add a new remote to the repository": "Add a new remote to the repository", //$NON-NLS-0$  //$NON-NLS-1$
@@ -413,9 +438,10 @@ define({//Default message bundle
 	"Loading default workspace": "Loading default workspace", //$NON-NLS-0$  //$NON-NLS-1$
 	"Show workspace changes as a patch": "Show workspace changes as a patch", //$NON-NLS-0$  //$NON-NLS-1$
 	"Show checked changes as a patch": "Show checked changes as a patch", //$NON-NLS-0$  //$NON-NLS-1$
+	"EmptyPatchWarning": "Please select at least one file to be included in the patch", //$NON-NLS-0$  //$NON-NLS-1$ 
 	"ShowCommitPatchTip": "Show patch for changes in this commit", //$NON-NLS-0$  //$NON-NLS-1$
 	"Continue": "Continue", //$NON-NLS-0$  //$NON-NLS-1$
-	"Contibue Rebase": "Continue Rebase", //$NON-NLS-0$  //$NON-NLS-1$
+	"Continue Rebase": "Continue Rebase", //$NON-NLS-0$  //$NON-NLS-1$
 	"Skip Patch": "Skip Patch", //$NON-NLS-0$  //$NON-NLS-1$
 	"Abort": "Abort", //$NON-NLS-0$  //$NON-NLS-1$
 	"Abort Rebase": "Abort Rebase", //$NON-NLS-0$  //$NON-NLS-1$
@@ -481,7 +507,7 @@ define({//Default message bundle
 	"Create new repository" : "Create new repository", //$NON-NLS-0$  //$NON-NLS-1$
 	"Attach the remote to one of your existing repositories" : "Attach the remote to one of your existing repositories", //$NON-NLS-0$  //$NON-NLS-1$
 	"You are reviewing contribution ${0} from ${1}" : "You are reviewing contribution ${0} from ${1}", //$NON-NLS-0$  //$NON-NLS-1$
-	"CommitNotFoundInWorkspace" : "Unfortunately the commit can not be found in your workspace. To see it try one of the following: ", //$NON-NLS-0$  //$NON-NLS-1$
+	"CommitNotFoundInWorkspace" : "Unfortunately the commit cannot be found in your workspace. To see it try one of the following: ", //$NON-NLS-0$  //$NON-NLS-1$
  	"To review the commit you can also:" : "To review the commit you can also:", //$NON-NLS-0$  //$NON-NLS-1$
 	"Contribution Review Request for ${0} on ${1}" : "Contribution Review Request for ${0} on ${1}", //$NON-NLS-0$  //$NON-NLS-1$
 	"Failing paths: ${0}": "Failing paths: ${0}", //$NON-NLS-0$  //$NON-NLS-1$
@@ -567,5 +593,37 @@ define({//Default message bundle
 	'Ssh Private Key:' : 'Ssh Private Key:', //$NON-NLS-0$  //$NON-NLS-1$
 	'Ssh Passphrase:' : 'Ssh Passphrase:', //$NON-NLS-0$  //$NON-NLS-1$
 	'confirmUnsavedChanges': 'There are unsaved changes. Do you want to save them?', //$NON-NLS-1$ //$NON-NLS-0$
-	'NewConfigurationEntryTooltip': "Add a new entry to the repository configuration" //$NON-NLS-1$ //$NON-NLS-0$
+	'NewConfigurationEntryTooltip': "Add a new entry to the repository configuration", //$NON-NLS-1$ //$NON-NLS-0$
+	'Configurations' : "Configurations", //$NON-NLS-0$  //$NON-NLS-1$
+	'DetachedHead ${0}' : "Detached HEAD@${0}", //$NON-NLS-1$ //$NON-NLS-0$
+	'SingleSubmodule' : "${0} (${1} submodule)", //$NON-NLS-1$ //$NON-NLS-0$
+	'PluralSubmodule' : "${0} (${1} submodules)", //$NON-NLS-1$ //$NON-NLS-0$
+	'UninitializedSubmodule' : " ( Uninitialized Submodule )", //$NON-NLS-1$ //$NON-NLS-0$
+	"Detach Head:": "Detach Head:", //$NON-NLS-0$ //$NON-NLS-1$
+	"Filter repositories": "Filter repositories", //$NON-NLS-0$ //$NON-NLS-1$
+	"Filter references": "Filter references", //$NON-NLS-0$ //$NON-NLS-1$
+	"Filter configuration entries": "Filter configuration entries", //$NON-NLS-0$ //$NON-NLS-1$
+	"ContinueTooltip": "Use after merging the conflicts and selecting all files", //$NON-NLS-0$  //$NON-NLS-1$
+	"SkipTooltip": "Bypass the current patch", //$NON-NLS-0$  //$NON-NLS-1$
+	"AbortTooltip": "Abort to end the rebase at any time", //$NON-NLS-0$  //$NON-NLS-1$
+	"CreatePullRequestRemoteConfirm": "In order to check out this pull request, a remote branch named ${0} with url ${1} will be created if it does not exist, are you sure?", //$NON-NLS-0$  //$NON-NLS-1$
+	"pull requests": "pull requests", //$NON-NLS-0$  //$NON-NLS-1$
+	"CheckoutPullRequest": "Checkout Pull Request", //$NON-NLS-0$  //$NON-NLS-1$
+	"CheckoutPullRequestMsg": "Checkout the pull request and make it active.", //$NON-NLS-0$  //$NON-NLS-1$
+	"Checking out pull request ${0}...": "Checking out pull request ${0}", //$NON-NLS-0$  //$NON-NLS-1$
+	"Checking out pull request...": "Checking out pull request", //$NON-NLS-0$  //$NON-NLS-1$
+	"Pull Request checked out.": "Pull Request checked out.", //$NON-NLS-0$  //$NON-NLS-1$
+	"Getting pull requests...": "Getting pull requests...", //$NON-NLS-0$  //$NON-NLS-1$
+	"PullRequestTreeItem":"${0}/${1} => ${2}/${3}", //$NON-NLS-0$  //$NON-NLS-1$
+	"PullRequestDescription": "#${0} ${1}", //$NON-NLS-0$  //$NON-NLS-1$
+	"MorePullRequests": "More pull requests for \"${0}\"", //$NON-NLS-0$  //$NON-NLS-1$
+	"MorePullRequestsProgress": "Loading more pull requests for \"${0}\"...", //$NON-NLS-0$  //$NON-NLS-1$
+	"Authorize to get pull requests": "Authorize to get pull requests", //$NON-NLS-0$  //$NON-NLS-1$
+	"CherryPickProgress": "Cherry Pick in progress", //$NON-NLS-0$  //$NON-NLS-1$
+	"MergeProgress": "Merge in progress", //$NON-NLS-0$  //$NON-NLS-1$
+	"OpenGithubPullRequest": "Open Github Page", //$NON-NLS-0$  //$NON-NLS-1$
+	"OpenGithubPullRequestMsg": "Open the Github page for this Pull Request.", //$NON-NLS-0$  //$NON-NLS-1$
+	"AllowPopUpMsg": "Please allow popups for this site.", //$NON-NLS-0$  //$NON-NLS-1$
+	"ToggleGraph":"Toggles the graphical representation of the commit history", //$NON-NLS-0$  //$NON-NLS-1$
+	"Annotated":"Annotated" //$NON-NLS-0$  //$NON-NLS-1$
 });

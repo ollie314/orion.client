@@ -10,12 +10,11 @@
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
 /*eslint-env amd, node*/
-/* global doctrine */
 define([
 'orion/objects',
 'orion/URITemplate',
-'htmlparser/visitor'
-], function(Objects, URITemplate, Visitor) {
+'webtools/util'
+], function(Objects, URITemplate, util) {
 	
 	/**
 	 * @description creates a new instance of the hover support
@@ -44,15 +43,18 @@ define([
 		 * @callback
 		 */
 		computeHoverInfo: function computeHover(editorContext, ctxt) {
+			if(ctxt.proposal && ctxt.proposal.kind === 'html') {
+				return ctxt.proposal.hover ? ctxt.proposal.hover : (ctxt.proposal.name ? ctxt.proposal.name : ctxt.proposal.description);
+			}
 			var that = this;
 			return that.htmlAstManager.getAST(editorContext).then(function(ast) {
 			    if(ast) {
-			        var node = that._findNode(ast, ctxt.offset, null);
+			        var node = util.findNodeAtOffset(ast, ctxt.offset);
 			        if(node) {
 			            switch(node.type) {
 			                case 'tag': {
 			                	if (that._hoverableTags.indexOf(node.name) >= 0){
-			                		return that._getTagContentsHover(editorContext, node.range);
+			                		//return that._getTagContentsHover(editorContext, node.range);
 			                	}
 			                    break;
 			                }
@@ -91,48 +93,33 @@ define([
 			});
 		},
 
-        /**
-		 * Returns the DOM node corresponding to the line and column number 
-		 * or null if no such node could be found.
-		 */
-		_findNode: function(dom, offset) {
-		    var found = null;
-			 Visitor.visit(dom, {
-	            visitNode: function(node) {
-	                //only check nodes that are typed, we don't care about any others
-					if(node.range[0] <= offset) {
-						found = node;
-					} else {
-					    return Visitor.BREAK;
-					}      
-	            }
-	        });
-	        return found;
-		},
-		
 		_getFileHover: function _getFileHover(editorContext, path) {
 		    if(path) {
 		        if(/^http/i.test(path)) {
     	            return this._formatFilesHover(path);
-    	        } else {
-    		        var that = this;
-    		        var opts;
-    		        if(/\.css$/i.test(path)) {
-    		            opts = {ext:'css', type:'CSS', icon:'../webtools/images/css.png'};
-    		        } else if(/\.htm.*/i.test(path)) {
-    		            opts = {ext:'html', type:'HTML', icon:'../webtools/images/html.png'};
-    		        } else if(!/\.js$/i.test(path)) {
-    		            return null;
-    		        }
-    		        return editorContext.getFileMetadata().then(function(meta) {
-        		          return that.resolver.getWorkspaceFile(path, opts).then(function(files) {
-        		            var rels  = that.resolver.resolveRelativeFiles(path, files, meta);
-            		        if(rels && rels.length > 0) {
-            		            return that._formatFilesHover(path, rels);
-            		        }
-        		          });    
-    		        });
+    	        }
+		        var that = this;
+		        var opts;
+		        if(/\.css$/i.test(path)) {
+		            opts = {ext:'css', type:'CSS', icon:'../webtools/images/css.png'}; //$NON-NLS-3$ //$NON-NLS-1$ //$NON-NLS-2$
+		        } else if(/\.htm.*/i.test(path)) {
+		            opts = {ext:'html', type:'HTML', icon:'../webtools/images/html.png'}; //$NON-NLS-3$ //$NON-NLS-1$ //$NON-NLS-2$
+		        } else if(!/\.js$/i.test(path)) {
+		            return null;
 		        }
+		        return editorContext.getFileMetadata().then(function(meta) {
+		        	if(Array.isArray(meta.parents) && meta.parents.length > 0) {
+						that.resolver.setSearchLocation(meta.parents[meta.parents.length - 1].Location);
+					} else {
+						that.resolver.setSearchLocation(null);	
+					}
+    		        return that.resolver.getWorkspaceFile(path, opts).then(function(files) {
+    		        	var rels  = that.resolver.resolveRelativeFiles(path, files, meta);
+        		    	if(rels && rels.length > 0) {
+        		        	return that._formatFilesHover(path, rels);
+        		    	}
+    		        });    
+		        });
 		    }
 		    return null;
 		},
@@ -164,7 +151,7 @@ define([
         		                      {
         		                      resource: file.location, 
         		                      params: {}
-        		                      }); //$NON-NLS-0$
+        		                      });
         	                hover += file.name + ']('+href+') - '+file.path+'\n\n';
         	            }
         	            
@@ -203,7 +190,7 @@ define([
 	                }
     	        }
     	        if(hover !== '') {
-    	           return {title: title, content: hover, type:'markdown'};
+    	           return {title: title, content: hover, type:'markdown', allowFullWidth: true};
     	        }
     	    }
     	    return null;
@@ -214,24 +201,28 @@ define([
 		          if(/^http/i.test(path) || base64) {
     		          var html = '<html><body style="margin:1px;"><img src="'+path+'" style="width:100%;height:100%;"/></body></html>'; //$NON-NLS-0$  //$NON-NLS-1$
     			      return {type: "html", content: html, width: "100px", height: "100px"};  //$NON-NLS-0$  //$NON-NLS-1$  //$NON-NLS-2$
-		          } else {
-		              var idx = path.lastIndexOf('.');
-		              if(idx > -1) {
-		                  var ext = path.slice(idx+1);
-		                  var that = this;
-		                  return editorContext.getFileMetadata().then(function(meta) {
-		                      return that.resolver.getWorkspaceFile(path, {ext:ext, type:'Image', icon:'../webtools/images/file.png'}).then(function(files) {
-                    		        if(files && files.length > 0) {
-                    		            var resolved = that.resolver.resolveRelativeFiles(path, files, meta);
-                    		            if(resolved && resolved.length > 0) {
-                    		                 var html = '<html><body style="margin:1px;"><img src="'+resolved[0].location+'" style="width:100%;height:100%;"/></body></html>'; //$NON-NLS-0$  //$NON-NLS-1$
-        			                         return {type: "html", content: html, width: "100px", height: "100px"};  //$NON-NLS-0$  //$NON-NLS-1$  //$NON-NLS-2$
-                    		            }
-                    		        }
-                	           });
-		                  });
-		              }
 		          }
+	              var idx = path.lastIndexOf('.');
+	              if(idx > -1) {
+	                  var ext = path.slice(idx+1);
+	                  var that = this;
+	                  return editorContext.getFileMetadata().then(function(meta) {
+	                  	if(Array.isArray(meta.parents) && meta.parents.length > 0) {
+							that.resolver.setSearchLocation(meta.parents[meta.parents.length - 1].Location);
+						} else {
+							that.resolver.setSearchLocation(null);	
+						}
+	                    return that.resolver.getWorkspaceFile(path, {ext:ext, type:'Image', icon:'../webtools/images/file.png'}).then(function(files) {
+                			if(files && files.length > 0) {
+                		    	var resolved = that.resolver.resolveRelativeFiles(path, files, meta);
+                		        if(resolved && resolved.length > 0) {
+                		        	var html = '<html><body style="margin:1px;"><img src="'+resolved[0].location+'" style="width:100%;height:100%;"/></body></html>'; //$NON-NLS-0$  //$NON-NLS-1$
+    			                    return {type: "html", content: html, width: "100px", height: "100px"};  //$NON-NLS-0$  //$NON-NLS-1$  //$NON-NLS-2$
+                		       	}
+                		    }
+            	        });
+	              	});
+	              }
 		      }
 		},
 		
@@ -244,7 +235,7 @@ define([
 			if (range){
 				var self = this;
 				return editorContext.getText().then(function(text) {
-					if(range[0] >= 0 && range[0] < text.length && range[1] > range[0] && range[1] < text.length){
+					if(range[0] >= 0 && range[0] < text.length && range[1] > range[0] && range[1] <= text.length){
 						var start = self._findTagStart(text, range[0]);
 						if (start === null){
 							return null;
@@ -268,7 +259,7 @@ define([
 			if(contents && offset) {
 				var pos = offset;
 				while(pos >= 0) {
-					if(contents.charAt(pos) === '<') {  //$NON-NLS-0$ 
+					if(contents.charAt(pos) === '<') {
 						return pos;
 					}
 					pos--;
@@ -278,8 +269,6 @@ define([
 		}
 		
 	});
-
-	HTMLHover.prototype.contructor = HTMLHover;
 	
 	return {
 		HTMLHover: HTMLHover

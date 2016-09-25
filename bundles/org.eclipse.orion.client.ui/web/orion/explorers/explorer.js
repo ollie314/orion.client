@@ -15,9 +15,10 @@ define([
 	'orion/webui/littlelib',
 	'orion/webui/treetable',
 	'orion/explorers/explorerNavHandler',
+	'orion/Deferred',
 	'orion/uiUtils',
 	'orion/commands'
-], function(messages, lib, mTreeTable, mNavHandler, UiUtils, mCommands){
+], function(messages, lib, mTreeTable, mNavHandler, Deferred, UiUtils, mCommands){
 
 var exports = {};
 
@@ -64,7 +65,22 @@ exports.Explorer = (function() {
 			}
 			this.destroyed = true;
 		},
-		
+		isDesktopSelectionMode: function() {
+			return new Deferred().resolve(false);
+		},
+		handleLinkDoubleClick: function(linkNode, doubleClickEvt) {
+            this.isDesktopSelectionMode().then(function(desktopMode){
+            	if(desktopMode) {
+            		doubleClickEvt.preventDefault();
+					var evt = document.createEvent("MouseEvents");
+				    evt.initMouseEvent("click", true, true, window,
+				        3, 0, 0, 0, 0,
+				        true, false, evt.shiftKey, true,
+				        0, null);
+				    linkNode.dispatchEvent(evt); 
+            	}
+            });
+		},
 		// we have changed an item on the server at the specified parent node
 		changedItem: function(parent, children) {
 			if (this.myTree) {
@@ -80,17 +96,30 @@ exports.Explorer = (function() {
 		
 		makeNewItemPlaceholder: function(item, domId, insertAfter) {
 			var placeholder = null;
-			var itemRow = this.getRow(item);
+			var tr = document.createElement("tr"); //$NON-NLS-0$
+			tr.id = domId+"placeHolderRow"; //$NON-NLS-0$
+			tr.classList.add("navRow"); //$NON-NLS-0$
+			var td = document.createElement("td"); //$NON-NLS-0$
+			td.id = domId+"placeHolderCol"; //$NON-NLS-0$
+			td.classList.add("navColumn"); //$NON-NLS-0$
+			tr.appendChild(td);
+			placeholder = {
+				wrapperNode: tr, 
+				refNode: td,
+				destroyFunction: function() {
+					try {
+						if (tr && tr.parentNode) {
+							tr.parentNode.removeChild(tr);
+						}	
+					} catch (err) {
+						// tr already removed, do nothing
+					}
+				}
+			};
+			var itemRow = this.getRow(item), parentNode;
 			if (itemRow) {
-				var parentNode = itemRow.parentNode;
+				parentNode = itemRow.parentNode;
 				// make a row and empty column so that the new name appears after checkmarks/expansions
-				var tr = document.createElement("tr"); //$NON-NLS-0$
-				tr.id = domId+"placeHolderRow"; //$NON-NLS-0$
-				tr.classList.add("navRow"); //$NON-NLS-0$
-				var td = document.createElement("td"); //$NON-NLS-0$
-				td.id = domId+"placeHolderCol"; //$NON-NLS-0$
-				td.classList.add("navColumn"); //$NON-NLS-0$
-				tr.appendChild(td);
 				if (insertAfter) {
 					// insert tr after itemRow, i.e. right before itemRow's nextSibling in the parent
 					var nextSibling = itemRow.nextSibling;
@@ -101,20 +130,9 @@ exports.Explorer = (function() {
 				}
 				
 				td.style.paddingLeft = itemRow.firstChild.style.paddingLeft; //itemRow is a <tr>, we want the indentation of its <td>
-				
-				placeholder = {
-					wrapperNode: tr, 
-					refNode: td,
-					destroyFunction: function() {
-						try {
-							if (tr && tr.parentNode) {
-								tr.parentNode.removeChild(tr);
-							}	
-						} catch (err) {
-							// tr already removed, do nothing
-						}
-					}
-				};
+			} else {
+				parentNode = this.myTree.getContentNode();
+				parentNode.appendChild(tr);
 			}
 			
 			return placeholder;
@@ -141,9 +159,9 @@ exports.Explorer = (function() {
 		 * Expand all the nodes under a node in the explorer
 		 * @param nodeModel {Object} the node model to be expanded. If not provided the whole tree is expanded recursively
 		 */
-		expandAll: function(nodeModel) {
+		expandAll: function(nodeModel, excludes) {
 			if(nodeModel){
-				this._expandRecursively(nodeModel);
+				this._expandRecursively(nodeModel, excludes);
 			} else {
 				if(!this._navHandler){
 					return;
@@ -151,14 +169,24 @@ exports.Explorer = (function() {
 				//We already know what the top level children is under the root, from the navigation handler.
 				var topLevelNodes = this._navHandler.getTopLevelNodes();
 				for (var i = 0; i < topLevelNodes.length ; i++){
-					this._expandRecursively(topLevelNodes[i]);
+					this._expandRecursively(topLevelNodes[i], excludes);
 				}
 			}
 		},
 		
-		_expandRecursively: function(node){
+		_inExcludes: function(node, excludes) {
+			if(this.model && this.model.getId && Array.isArray(excludes)) {
+				var matchFound = excludes.some(function(exclude) {
+					return exclude === this.model.getId(node);
+				}.bind(this));
+				return matchFound;				
+			}
+			return false;
+		},
+		
+		_expandRecursively: function(node, excludes){
 			//If a node is not expandable, we stop here.
-			if(!this._navHandler || !this._navHandler.isExpandable(node)){
+			if(!this._navHandler || !this._navHandler.isExpandable(node) || this._inExcludes(node, excludes)){
 				return;
 			}
 			var that = this;
@@ -169,7 +197,7 @@ exports.Explorer = (function() {
 					}
 					var len = children.length;
 					for (var i = 0; i < len ; i++){
-						that._expandRecursively(children[i]);
+						that._expandRecursively(children[i], excludes);
 					}
 				});
 			});
@@ -235,11 +263,11 @@ exports.Explorer = (function() {
 			return this._navDict;
 		},
 		
-		select: function(item) {
+		select: function(item, toggle) {
 			var navHandler = this.getNavHandler();
 			if (navHandler) {
 				navHandler.cursorOn(item, true);
-				navHandler.setSelection(item);
+				navHandler.setSelection(item, toggle);
 			}
 		},
 		
@@ -282,7 +310,9 @@ exports.Explorer = (function() {
 					this._navHandler = options.navHandlerFactory.createNavHandler(this, this._navDict, options);
 				} else {
 					var getChildrenFunc = options ? options.getChildrenFunc : null;
-					this._navHandler = new mNavHandler.ExplorerNavHandler(this, this._navDict, {getChildrenFunc: getChildrenFunc, setFocus: options && options.setFocus, selectionPolicy: (options ? options.selectionPolicy : null)});
+					this._navHandler = new mNavHandler.ExplorerNavHandler(this, this._navDict, {getChildrenFunc: getChildrenFunc, setFocus: options && options.setFocus, 
+														selectionPolicy: (options ? options.selectionPolicy : null),
+														gridClickSelectionPolicy: (options ? options.gridClickSelectionPolicy : null)});
 				}
 			}
 			var that = this;
@@ -853,10 +883,17 @@ exports.SelectionRenderer = (function(){
 	};
 	
 	SelectionRenderer.prototype.initSelectableRow = function(item, tableRow) {
-		var self = this;
+		var _self = this;
 		tableRow.addEventListener("click", function(evt) { //$NON-NLS-0$
-			if(self.explorer.getNavHandler()){
-				self.explorer.getNavHandler().onClick(item, evt);
+			var navHandler = _self.explorer.getNavHandler();
+			if(navHandler){
+				navHandler.onClick(item, evt);
+				if(navHandler.gridClickSelectionPolicy === "true") {
+                    var link = lib.$("a", tableRow);
+                    if (link && link !== evt.target) {
+                    		link.click();
+                    }
+				}
 			}
 		}, false);
 	};
@@ -893,7 +930,7 @@ exports.SelectionRenderer = (function(){
 				}
 			} else {
 				if(this.getSecondaryColumnStyle){
-					cell.classList.add(this.getSecondaryColumnStyle()); //$NON-NLS-0$
+					cell.classList.add(this.getSecondaryColumnStyle(i)); //$NON-NLS-0$
 				} else {
 					cell.classList.add("secondaryColumn"); //$NON-NLS-0$
 				}

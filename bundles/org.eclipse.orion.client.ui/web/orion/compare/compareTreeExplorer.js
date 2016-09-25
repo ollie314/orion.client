@@ -104,7 +104,7 @@ define(['i18n!orion/compare/nls/messages', 'require', 'orion/webui/littlelib', '
 			case 0:
 				col = _createElement('th'); //$NON-NLS-0$
 				h2 = _createElement('h2', "compare_tree_grid", null, col); //$NON-NLS-1$ //$NON-NLS-0$
-				h2.textContent = this.explorer._compareResults.length + " of " + this.explorer._totalFiles + messages["files changed"]; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
+				h2.textContent = i18nUtil.formatMessage(messages["n of t files changed"], this.explorer._compareResults.length, this.explorer._totalFiles); //$NON-NLS-0$
 				return col;
 			case 1: 
 				col = _createElement('th'); //$NON-NLS-0$
@@ -186,11 +186,11 @@ define(['i18n!orion/compare/nls/messages', 'require', 'orion/webui/littlelib', '
 	
 	CompareTreeExplorerRenderer.prototype.constructor = CompareTreeExplorerRenderer;
 	
-	function CompareTreeExplorer(registry, parentId, commandService){
+	function CompareTreeExplorer(registry, parentId, commandService, fileClient){
 		this.selection = new mSelection.Selection(registry, "orion.compare.selection"); //$NON-NLS-0$
 		this.registry = registry;
 		this._commandService = commandService;
-		this._fileClient = new mFileClient.FileClient(this.registry);
+		this._fileClient = fileClient;
 		this._progress = registry.getService("orion.page.progress"); //$NON-NLS-0$
 		this.parentId = parentId;
 		this.renderer = new CompareTreeExplorerRenderer({checkbox: false}, this);
@@ -320,7 +320,7 @@ define(['i18n!orion/compare/nls/messages', 'require', 'orion/webui/littlelib', '
 				that._testSameFiles(OveralIndex+1);
 			}
 		}, function(error, ioArgs) {
-			if (error.status === 404) {
+			if (error.status === 404 || error.status === 410) {
 				files[currentIndex].Content = "";
 				if(currentIndex < (files.length - 1)){
 					that._getFileContent(files, currentIndex+1, OveralIndex);

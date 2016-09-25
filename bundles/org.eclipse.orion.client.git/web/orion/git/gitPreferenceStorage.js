@@ -10,7 +10,7 @@
  *******************************************************************************/
 /*eslint-env browser, amd*/
  
- define(['orion/Deferred'], function(Deferred){
+ define(['orion/Deferred', 'orion/util'], function(Deferred, util){
  
 	/**
 	 * Support class for using the orion preferences as a local
@@ -21,6 +21,7 @@
 	function PreferenceStorage(serviceRegistry){
 		this._prefix = "/git/credentials";
 		this._preferenceService = serviceRegistry.getService("orion.core.preference");
+		if(util.isElectron) this.enable();
 	}
 	
 	PreferenceStorage.prototype = {
@@ -49,19 +50,20 @@
 			}
 			
 			var d = new Deferred();
-			this._preferenceService.getPreferences(this._prefix, 2).then(
+			this._preferenceService.get(this._prefix, undefined, {scope: 2}).then(
 				function(pref){
-					var settings = pref.get("settings");
+					var settings = pref["settings"];
 					if(settings === undefined){
 						d.reject();
 						return;
 					}
 				
 					if(settings.enabled){
-						pref.put(repository, credentials);
-						d.resolve();
+						var data = {};
+						data[repository] = credentials;
+						this._preferenceService.put(this._prefix, data, {scope: 2}).then(d.resolve, d.reject);
 					} else { d.reject(); }
-				}
+				}.bind(this)
 			);
 			
 			return d;
@@ -82,16 +84,16 @@
 			};
 			
 			var d = new Deferred();
-			this._preferenceService.getPreferences(this._prefix, 2).then(
+			this._preferenceService.get(this._prefix, undefined, {scope: 2}).then(
 				function(pref){
-					var settings = pref.get("settings");
+					var settings = pref["settings"];
 					if(settings === undefined){
 						d.reject();
 						return;
 					}
 				
 					if(settings.enabled){
-						var userCredentials = pref.get(repository);
+						var userCredentials = pref[repository];
 						if(userCredentials !== undefined) { d.resolve(userCredentials); }
 						else { d.resolve(credentials); }
 					} else { d.reject(); }
@@ -106,9 +108,9 @@
 		 */
 		isEnabled : function(){
 			var d = new Deferred();
-			this._preferenceService.getPreferences(this._prefix, 2).then(
+			this._preferenceService.get(this._prefix, undefined, {scope: 2}).then(
 				function(pref){
-					var settings = pref.get("settings");
+					var settings = pref["settings"];
 					if(settings === undefined){
 						d.resolve(false);
 						return;
@@ -125,15 +127,7 @@
 		 * Enables the storage for futher use.
 		 */
 		enable : function(){
-			var d = new Deferred();
-			this._preferenceService.getPreferences(this._prefix, 2).then(
-				function(pref){
-					pref.put("settings", { enabled : true });
-					d.resolve();
-				}
-			);
-			
-			return d;
+			return this._preferenceService.put(this._prefix, {settings: { enabled : true }}, {scope: 2});
 		},
 		
 		/**
@@ -141,15 +135,7 @@
 		 * Please note no credentials are erased.
 		 */
 		disable : function(){
-			var d = new Deferred();
-			this._preferenceService.getPreferences(this._prefix, 2).then(
-				function(pref){
-					pref.put("settings", { enabled : false });
-					d.resolve();
-				}
-			);
-			
-			return d;
+			return this._preferenceService.put(this._prefix, {settings: { enabled : false }}, {scope: 2});
 		},
 		
 		/**
@@ -158,15 +144,7 @@
 		 * @param repository [required] unique repository URL
 		 */
 		remove : function(repository){
-			var d = new Deferred();
-			this._preferenceService.getPreferences(this._prefix, 2).then(
-				function(pref){
-					pref.remove(repository);
-					d.resolve();
-				}
-			);
-			
-			return d;
+			return this._preferenceService.remove(this._prefix, repository, {scope: 2});
 		},
 		
 		/**
@@ -175,10 +153,10 @@
 		 */
 		getRepositories : function(){
 			var d = new Deferred();
-			this._preferenceService.getPreferences(this._prefix, 2).then(
+			this._preferenceService.get(this._prefix, undefined, {scope: 2}).then(
 				function(pref){
 					var result = [];
-					var repositories = pref.keys();
+					var repositories = Object.keys(pref);
 					
 					for(var i=0; i<repositories.length; ++i){
 						if(repositories[i] !== "settings"){

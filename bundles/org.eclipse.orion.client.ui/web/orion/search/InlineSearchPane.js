@@ -12,8 +12,8 @@
 define([
 	'orion/objects',
 	'orion/webui/littlelib',
+	'orion/bidiUtils',
 	'text!orion/search/InlineSearchPane.html',
-	'orion/searchClient',
 	'orion/inlineSearchResultExplorer',
 	'orion/searchUtils',
 	'orion/Deferred', 
@@ -22,9 +22,11 @@ define([
 	'i18n!orion/search/nls/messages',
 	'orion/webui/Slideout'
 ], function(
-	objects, lib, InlineSearchPaneTemplate, mSearchClient, InlineSearchResultExplorer, 
+	objects, lib, bidiUtils, InlineSearchPaneTemplate, InlineSearchResultExplorer, 
 	mSearchUtils, Deferred, DirectoryPrompterDialog, ComboTextInput, messages, mSlideout
 ) {
+	var SearchAnnoTypes = {};
+	SearchAnnoTypes.ANNO_SEARCH_HIT = "orion.annotation.search.hit"; //$NON-NLS-0$
 	var SlideoutViewMode = mSlideout.SlideoutViewMode;
 	/**
 	 * @param {orion.webui.Slideout} slideout
@@ -35,7 +37,9 @@ define([
 		this._serviceRegistry = options.serviceRegistry;
 		this._commandRegistry = options.commandRegistry;
 		this._fileClient = options.fileClient;
+		this._searcher = options.searcher;
 		this._preferences = options.preferences;
+		this._inputManager = options.inputManager;
 		this._initialize();
 	}
 	InlineSearchPane.prototype = Object.create(SlideoutViewMode.prototype);
@@ -68,13 +72,17 @@ define([
 			this._replaceCompareTitleDiv = lib.node("replaceCompareTitleDiv"); //$NON-NLS-0$
 			this._replaceCompareDiv = lib.node("replaceCompareDiv"); //$NON-NLS-0$
 
-			this._searcher = new mSearchClient.Searcher({serviceRegistry: this._serviceRegistry, commandService: this._commandRegistry, fileService: this._fileClient});
-			this._searchResultExplorer = new InlineSearchResultExplorer(this._serviceRegistry, this._commandRegistry, this, this._preferences);
+			this._searchResultExplorer = new InlineSearchResultExplorer(this._serviceRegistry, this._commandRegistry, this, this._preferences, this._fileClient, this._searcher);
 			
 			this._initControls();
 			this._initHTMLLabels();
 			
 			this._slideout.getContentNode().removeChild(this._searchWrapper); // detach wrapper now that initialization is done, see getContentNode().appendChild() call above
+			this._inputManager.addEventListener("InputChanged", function(evt) { //$NON-NLS-0$
+				if(evt.metadata && !evt.metadata.Directory) {
+					this._generateAnnotations(decodeURIComponent(evt.metadata.Location), evt.editor);
+				}
+			}.bind(this));
 		},
 		
 		isVisible: function() {
@@ -82,12 +90,31 @@ define([
 		},
 				
 		show: function() {
+			this.previousDocumentTitle = window.document.title;
 			SlideoutViewMode.prototype.show.call(this);
 			window.setTimeout(this._focusOnTextInput, 100);
 		},
 		
 		hide: function() {
+			if(this._defaultSearchResource){
+  				this.setSearchScope(this._defaultSearchResource);//reset search scope when the InlineSearchPane is hide
+			}
+
+			if(window.document.title === this.newDocumentTitle){
+				window.document.title = this.previousDocumentTitle;
+			}
 			SlideoutViewMode.prototype.hide.call(this);
+			//if(this._filledResult) {
+				this._showSearchOptBLocks();	
+				this._hideReplaceField();
+				this._searchBox.show();
+				this._searchBox.enable(true);
+				delete this._filledResult;
+				lib.empty(lib.node("searchResultsTitle"));
+				lib.empty(lib.node("searchPageActions"));
+				lib.empty(lib.node("searchPageActionsRight"));
+				lib.empty(this._searchResultsWrapperDiv);
+			//}
 			this.hideReplacePreview();
 		},
 		
@@ -113,10 +140,48 @@ define([
 					start: 0,
 					replace: replaceValue,
 					caseSensitive: this._caseSensitiveCB.checked,
+					wholeWord: this._wholeWordCB.checked,
 			        regEx: this._regExCB.checked,
 					fileNamePatterns: fileNamePatternsArray,
 			        resource: resource
 			};
+		},
+		
+		search: function(){
+			this._searchBox.enable(true);
+			this._showSearchOptBLocks();
+			this._submitSearch();
+		},
+		
+		_generateAnnotations: function(fileLocation, editor) {
+			this._searchResultExplorer.findFileNode(fileLocation).then(function(fileNode) {
+				if(fileNode && fileNode.children && editor) {
+					var annotationModel = editor.getAnnotationModel();
+					annotationModel.removeAnnotations(SearchAnnoTypes.ANNO_SEARCH_HIT);
+					fileNode.children.forEach(function(match) {
+						match.type = SearchAnnoTypes.ANNO_SEARCH_HIT;
+						annotationModel.addAnnotation(match);
+					});
+				}
+			}.bind(this));
+		},
+		
+		_initAnnotations: function() {
+			if(this._inputManager && this._inputManager.inputManager) {
+				var fMeta = this._inputManager.inputManager.getFileMetadata();
+				if(fMeta && !fMeta.Directory) {
+					this._generateAnnotations(decodeURIComponent(fMeta.Location), this._inputManager.inputManager.editor);
+				}
+			}
+		},
+		
+		fillSearchResult: function(searchResult) {
+			this._filledResult = searchResult;
+			this._showReplaceField();
+			this._hideSearchOptBLocks();	
+			this._searchResultExplorer.runSearch(searchResult.searchParams, this._searchResultsWrapperDiv, searchResult).then(function() {
+				this._initAnnotations();
+			}.bind(this));
 		},
 				
 		_submitSearch: function(){
@@ -126,7 +191,9 @@ define([
 				this._searchBox.addTextInputValueToRecentEntries();
 				this._fileNamePatternsBox.addTextInputValueToRecentEntries();
 				var searchParams = mSearchUtils.getSearchParams(this._searcher, options.keyword, options);
-				this._searchResultExplorer.runSearch(searchParams, this._searchResultsWrapperDiv, this._searcher);
+				this._searchResultExplorer.runSearch(searchParams, this._searchResultsWrapperDiv).then(function() {
+					this._initAnnotations();
+				}.bind(this));
 				this._hideSearchOptions();
 			}
 		},
@@ -140,9 +207,15 @@ define([
 				this._searchBox.addTextInputValueToRecentEntries();
 				this._replaceBox.addTextInputValueToRecentEntries();
 				this._fileNamePatternsBox.addTextInputValueToRecentEntries();
-				var searchParams = mSearchUtils.getSearchParams(this._searcher, options.keyword, options);
-				this._searchResultExplorer.runSearch(searchParams, this._searchResultsWrapperDiv, this._searcher);
-				this._hideSearchOptions();
+       			var searchParams;
+				if(this._filledResult) {
+       				searchParams = mSearchUtils.copySearchParams(this._filledResult.searchParams);
+       				searchParams.replace = options.replace;
+				} else {
+					searchParams = mSearchUtils.getSearchParams(this._searcher, options.keyword, options);
+					this._hideSearchOptions();
+				}
+				this._searchResultExplorer.runSearch(searchParams, this._searchResultsWrapperDiv, this._filledResult);
 			}
 		},
 	    
@@ -213,12 +286,12 @@ define([
 			
 			this._searchBox.setRecentEntryButtonTitle(messages["Show previous search terms"]); //$NON-NLS-0$
 			
-			this._searchTextInputBox.addEventListener("keydown", function(e) { //$NON-NLS-0$
+			this._searchWrapper.addEventListener("keydown", function(e) { //$NON-NLS-0$
 				if(e.defaultPrevented){// If the key event was handled by other listeners and preventDefault was set on(e.g. input completion handled ENTER), we do not handle it here
 					return;
 				}
 				var keyCode= e.charCode || e.keyCode;
-				if (keyCode === lib.KEY.ENTER) {
+				if (keyCode === lib.KEY.ENTER && this._searchTextInputBox === e.target) {
 					this._searchTextInputBox.blur();
 					if (this._replaceBoxIsHidden()) {
 						this._submitSearch();
@@ -315,15 +388,16 @@ define([
 			this._initFileNamePatternsBox();
 			
 			this._caseSensitiveCB = lib.$("#advSearchCaseSensitive", this._searchWrapper); //$NON-NLS-0$
+			this._wholeWordCB = lib.$("#advSearchWholeWord", this._searchWrapper); //$NON-NLS-0$
 			this._regExCB = lib.$("#advSearchRegEx", this._searchWrapper); //$NON-NLS-0$
 			this._toggleReplaceLink = lib.$("#toggleReplaceLink", this._searchWrapper); //$NON-NLS-0$
 			
 			this._toggleSearchOptionsLink = lib.$("#toggleSearchOptionsLink", this._searchWrapper); //$NON-NLS-0$
 			this._toggleSearchOptionsLink.addEventListener("click", this.showSearchOptions.bind(this)); //$NON-NLS-0$
-			this._toggleSearchOptionsLink.innerHTML = messages["^ Edit Search"]; //$NON-NLS-0$
+			this._toggleSearchOptionsLink.textContent = messages["^ Edit Search"]; //$NON-NLS-0$
 
 			if (this._replaceBoxIsHidden()) {
-	        	this._toggleReplaceLink.innerHTML = messages["Show Replace"]; //$NON-NLS-0$	
+	        	this._toggleReplaceLink.textContent = messages["Show Replace"]; //$NON-NLS-0$	
 	        }
 	        this._toggleReplaceLink.addEventListener("click", this._toggleReplaceFieldVisibility.bind(this)); //$NON-NLS-0$
 	        
@@ -331,15 +405,21 @@ define([
 		},
 		
 		_initHTMLLabels: function(){
-			this._replaceCompareTitleDiv.innerHTML = messages["Preview: "]; //$NON-NLS-0$
+			this._replaceCompareTitleDiv.textContent = messages["Preview: "]; //$NON-NLS-0$
 			lib.$("#advSearchCaseSensitiveLabel", this._searchWrapper).appendChild(document.createTextNode(messages["Case sensitive"])); //$NON-NLS-1$ //$NON-NLS-0$
+			lib.$("#advSearchWholeWordLabel", this._searchWrapper).appendChild(document.createTextNode(messages["Whole Word"])); //$NON-NLS-1$ //$NON-NLS-0$
 			lib.$("#advSearchRegExLabel", this._searchWrapper).appendChild(document.createTextNode(messages["Regular expression"])); //$NON-NLS-1$ //$NON-NLS-0$
 			lib.$("#searchScopeLabel", this._searchWrapper).appendChild(document.createTextNode(messages["Scope"])); //$NON-NLS-1$ //$NON-NLS-0$
 			lib.$("#fileNamePatternsLabel", this._searchWrapper).appendChild(document.createTextNode(messages["File name patterns (comma-separated)"])); //$NON-NLS-1$ //$NON-NLS-0$
 			lib.$("#searchScopeSelectButton", this._searchWrapper).title = messages["Choose a Folder"]; //$NON-NLS-1$ //$NON-NLS-0$
 		},
 		
-		setSearchScope: function(targetFolder) {
+		setSearchScope: function(scope) {
+			this._targetFolder = scope;
+			var targetFolder = scope;
+			if(typeof scope === "string") {
+				targetFolder = {Location: scope};
+			}
 			if (targetFolder && targetFolder.fileMetadata) {
 				targetFolder = targetFolder.fileMetadata;
 			}
@@ -360,6 +440,24 @@ define([
 			this._displaySelectedSearchScope();
 		},
 		
+		setSearchText: function(str) {
+			this._searchBox.setTextInputValue(str);
+		},
+		
+		setCheckBox: function(searchParams) {
+			this._caseSensitiveCB.checked = searchParams.caseSensitive ? true : false;
+			this._wholeWordCB.checked = searchParams.wholeWord ? true : false;
+			this._regExCB.checked = searchParams.regEx ? true : false;
+		},
+		
+		setFileNamePatterns: function(fNamePattern) {
+			if(Array.isArray(fNamePattern)) {
+				this._fileNamePatternsBox.setTextInputValue(fNamePattern.join(", ")); //$NON-NLS-0$
+			} else {
+				this._fileNamePatternsBox.setTextInputValue("");
+			}
+		},
+		
 		_initSearchScope: function() {
 			this._rootURL = this._fileClient.fileServiceRootURL();
 			this._searchLocations = [this._rootURL];
@@ -368,13 +466,23 @@ define([
 			this._searchScopeSelectButton = lib.$("#searchScopeSelectButton", this._searchOptWrapperDiv); //$NON-NLS-0$
 			
 			this._searchScopeSelectButton.addEventListener("click", function(){ //$NON-NLS-0$
-				var searchScopeDialog = new DirectoryPrompterDialog.DirectoryPrompterDialog({
-					title: messages["Choose a Folder"], //$NON-NLS-0$
-					serviceRegistry: this._serviceRegistry,
-					fileClient: this._fileClient,				
-					func: this.setSearchScope.bind(this)
-				});
-				searchScopeDialog.show();
+				var deferred;
+				if(typeof this._targetFolder === "string") {
+					deferred = this._fileClient.read(this._targetFolder, true);
+				} else {
+					deferred = new Deferred().resolve(this._targetFolder);
+				}
+				deferred.then(function(scopeMetadata){
+					this._targetFolder = scopeMetadata;
+					var searchScopeDialog = new DirectoryPrompterDialog.DirectoryPrompterDialog({
+						title: messages["Choose a Folder"], //$NON-NLS-0$
+						serviceRegistry: this._serviceRegistry,
+						fileClient: this._fileClient,
+						targetFolder: scopeMetadata,
+						func: this.setSearchScope.bind(this)
+					});
+					searchScopeDialog.show();
+				}.bind(this));
 			}.bind(this));
 		},
 		
@@ -393,7 +501,6 @@ define([
 				this._hideReplaceField();
 			}
 			this._searchTextInputBox.focus();
-			this._searchResultExplorer.initCommands();
 		},
 		
 		showSearchOptions: function() {
@@ -406,18 +513,29 @@ define([
 			this._toggleSearchOptionsLink.classList.remove("linkHidden"); //$NON-NLS-0$
 		},
 		
+		_showSearchOptBLocks: function() {
+			this._searchWrapper.classList.remove("searchOptParamBlockHidden");
+		},
+		
+		_hideSearchOptBLocks: function() {
+			this._searchWrapper.classList.add("searchOptParamBlockHidden");
+			//this._searchBox.hide();
+			this._replaceTextInputBox.focus();
+			this._searchBox.enable(false);
+		},
+		
 		_showReplaceField: function() {
 			this._searchBox.hideButton();
 			this._replaceWrapper.classList.remove("replaceWrapperHidden"); //$NON-NLS-0$
 			this._searchWrapper.classList.add("replaceModeActive"); //$NON-NLS-0$
-			this._toggleReplaceLink.innerHTML = messages["Hide Replace"]; //$NON-NLS-0$
+			this._toggleReplaceLink.textContent = messages["Hide Replace"]; //$NON-NLS-0$
 		},
 		
 		_hideReplaceField: function() {
 			this._searchBox.showButton();
 			this._replaceWrapper.classList.add("replaceWrapperHidden"); //$NON-NLS-0$
 			this._searchWrapper.classList.remove("replaceModeActive"); //$NON-NLS-0$
-			this._toggleReplaceLink.innerHTML = messages["Show Replace"]; //$NON-NLS-0$
+			this._toggleReplaceLink.textContent = messages["Show Replace"]; //$NON-NLS-0$
 			this.hideReplacePreview();
 		},
 		
@@ -462,6 +580,9 @@ define([
 				scopeElementWrapper.title = decodedLocation;
 				
 				locationElement.appendChild(document.createTextNode(scopeString));
+				if (bidiUtils.isBidiEnabled()) {
+					locationElement.dir = bidiUtils.getTextDirection(scopeString);
+				}
 				scopeElementWrapper.appendChild(locationElement);	
 			}, this);
 		},

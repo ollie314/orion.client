@@ -18,8 +18,9 @@ define([
 	'orion/objects',
 	'orion/URITemplate',
 	'orion/contentTypes',
-	'orion/webui/littlelib'
-], function(messages, Deferred, mExplorer, mNavUtils, mExtensionCommands, objects, URITemplate, mContentTypes, lib) {
+	'orion/webui/littlelib',
+	'orion/bidiUtils'
+], function(messages, Deferred, mExplorer, mNavUtils, mExtensionCommands, objects, URITemplate, mContentTypes, lib, bidiUtils) {
 		
 	var max_more_info_column_length = 60;
 	/* Internal */
@@ -79,13 +80,17 @@ define([
 		// TODO FIXME refactor the async href calculation portion of this function into a separate function, for clients who do not want the <A> created.
 		item = objects.clone(item);
 		var link;
+		var linkName = item.Name || '';
+		if (bidiUtils.isBidiEnabled()) {
+			linkName = bidiUtils.enforceTextDirWithUcc(linkName);
+		}
 		if (item.Directory) {
 			link = document.createElement("a"); //$NON-NLS-0$
 			link.className = "navlinkonpage"; //$NON-NLS-0$
 			var template = !folderPageURL ? uriTemplate : new URITemplate(folderPageURL + "#{,resource,params*}"); //$NON-NLS-0$
 			link.href = template.expand({resource: item.ChildrenLocation});
 			if(item.Name){
-				link.appendChild(document.createTextNode(item.Name));
+				link.appendChild(document.createTextNode(linkName));
 			}
 		} else {
 			if (!openWithCommands) {
@@ -110,7 +115,7 @@ define([
 				imageHolderDom.appendChild(image);
 			}
 			if(item.Name){
-				link.appendChild(document.createTextNode(item.Name));
+				link.appendChild(document.createTextNode(linkName));
 			}
 			var href = item.Location;
 			if (uriParams && typeof uriParams === "object") { //$NON-NLS-0$
@@ -118,7 +123,7 @@ define([
 				objects.mixin(item.params, uriParams);
 			}
 			var openWithCommand = mExtensionCommands.getOpenWithCommand(commandService, item, openWithCommands);
-			if (openWithCommand) {
+			if (openWithCommand && typeof(openWithCommand.hrefCallback) === 'function') {
 				href = openWithCommand.hrefCallback({items: item});
 			}
 			Deferred.when(contentTypeService.getFileContentType(item), function(contentType) {
@@ -159,19 +164,19 @@ define([
 	NavigatorRenderer.prototype = new mExplorer.SelectionRenderer(); 
 
 	NavigatorRenderer.prototype.wrapperCallback = function(wrapperElement) {
-		wrapperElement.setAttribute("role", "tree"); //$NON-NLS-1$ //$NON-NLS-0$
+		wrapperElement.setAttribute("role", "tree"); //$NON-NLS-1$ //$NON-NLS-2$
 	};
 
 	NavigatorRenderer.prototype.tableCallback = function(tableElement) {
-		tableElement.setAttribute("aria-label", messages["Navigator"]); //$NON-NLS-1$ //$NON-NLS-0$
-		tableElement.setAttribute("role", "presentation"); //$NON-NLS-1$ //$NON-NLS-0$
+		tableElement.setAttribute("aria-label", messages["Navigator"]); //$NON-NLS-1$
+		tableElement.setAttribute("role", "presentation"); //$NON-NLS-1$ //$NON-NLS-2$
 	};
 
 	/**
 	 * @param {Element} rowElement
 	 */
 	NavigatorRenderer.prototype.rowCallback = function(rowElement, model) {
-		rowElement.setAttribute("role", "treeitem"); //$NON-NLS-1$ //$NON-NLS-0$
+		rowElement.setAttribute("role", "treeitem"); //$NON-NLS-1$ //$NON-NLS-2$
 	};
 	
 	
@@ -179,13 +184,13 @@ define([
 	 * @param {Element} bodyElement
 	 */
 	NavigatorRenderer.prototype.emptyCallback = function(bodyElement) {
-		var tr = document.createElement("tr"); //$NON-NLS-0$
-		var td = document.createElement("td"); //$NON-NLS-0$
+		var tr = document.createElement("tr"); //$NON-NLS-1$
+		var td = document.createElement("td"); //$NON-NLS-1$
 		td.colSpan = this.oneColumn ? 1 : 3;
-		var noFile = document.createElement("div"); //$NON-NLS-0$
-		noFile.classList.add("noFile"); //$NON-NLS-0$
+		var noFile = document.createElement("div"); //$NON-NLS-1$
+		noFile.classList.add("noFile"); //$NON-NLS-1$
 		noFile.textContent = messages["NoFile"];
-		var plusIcon = document.createElement("span"); //$NON-NLS-0$
+		var plusIcon = document.createElement("span"); //$NON-NLS-1$
 		plusIcon.appendChild(document.createTextNode(messages["File"]));
 		lib.processDOMNodes(noFile, [plusIcon]);
 		td.appendChild(noFile);
@@ -273,7 +278,8 @@ define([
 	};
 
 	/**
-	* Subclasses can override this function to customize the DOM Element that is created to represent a file.
+	 * Subclasses can override this function to customize the DOM Element that is created to represent a file.
+	 * The returned element must have an <code>id</code> property.
 	 * The default implementation does nothing.
 	 * @name orion.explorer.NavigatorRenderer#updateFileNode
 	 * @type {Function}
@@ -281,7 +287,6 @@ define([
 	 * @param {Element} fileNode The file node to update.
 	 * @param {Boolean} isImage The flag to indicate if the file is an image file.
 	 */
-	// The returned element must have an <code>id</code> property.
 	NavigatorRenderer.prototype.updateFileNode = function(file, fileNode, isImage) {
 	};
 
@@ -317,9 +322,9 @@ define([
 			var col = document.createElement('td'); //$NON-NLS-0$
 			var span = document.createElement("span"); //$NON-NLS-0$
 			span.id = tableRow.id+"MainCol"; //$NON-NLS-0$
-			span.setAttribute("role", "presentation"); //$NON-NLS-1$ //$NON-NLS-0$
+			span.setAttribute("role", "presentation"); //$NON-NLS-1$ //$NON-NLS-2$
 			col.appendChild(span);
-			col.setAttribute("role", "presentation"); //$NON-NLS-1$ //$NON-NLS-0$
+			col.setAttribute("role", "presentation"); //$NON-NLS-1$ //$NON-NLS-2$
 			span.className = "mainNavColumn"; //$NON-NLS-0$
 			var itemNode;
 			if (item.Directory) {
@@ -342,8 +347,8 @@ define([
 				itemNode.id = tableRow.id + "NameLink"; //$NON-NLS-0$
 				if (itemNode.nodeType === 1) {
 					mNavUtils.addNavGrid(this.explorer.getNavDict(), item, itemNode);
-					itemNode.setAttribute("role", "link"); //$NON-NLS-1$ //$NON-NLS-0$
-					itemNode.setAttribute("tabindex", "-1"); //$NON-NLS-1$ //$NON-NLS-0$
+					itemNode.setAttribute("role", "link"); //$NON-NLS-1$ //$NON-NLS-2$
+					itemNode.setAttribute("tabindex", "-1"); //$NON-NLS-1$ //$NON-NLS-2$
 				}
 			}
 			// render any inline commands that are present.

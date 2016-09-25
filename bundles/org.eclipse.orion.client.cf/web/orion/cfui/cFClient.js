@@ -83,7 +83,6 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				"Content-Type" : contentType
 				},
 				timeout : 15000,
-				handleAs : "json",
 				data : JSON.stringify(data)
 				}).then(function(result) {
 					self._getServiceResponse(clientDeferred, result);
@@ -135,7 +134,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 					location+=("/" + instance);
 				}
 				if(target){
-					location += ("?Target=" + JSON.stringify(target));
+					location += ("?Target=" + encodeURIComponent(JSON.stringify(target)));
 				}
 				return this._xhrV1("GET", location);
 			},
@@ -184,7 +183,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				}
 
 				if (target)
-					url += "&Target=" + JSON.stringify(target);
+					url += "&Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("GET", url);
 			},
@@ -193,7 +192,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				var url = require.toUrl("cfapi/apps");
 
 				if (target)
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("GET", url);
 			},
@@ -229,7 +228,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				var url = require.toUrl("cfapi/orgs");
 
 				if (target)
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("GET", url);
 			},
@@ -238,7 +237,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				var url = require.toUrl("cfapi/routes");
 
 				if (target)
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("GET", url);
 			},
@@ -253,7 +252,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				url += "?Route=" + encodeURIComponent(JSON.stringify(routeObj));
 
 				if (target)
-					url += "&Target=" + JSON.stringify(target);
+					url += "&Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("GET", url);
 			},
@@ -270,7 +269,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				url += "&GlobalCheck=true";
 
 				if (target)
-					url += "&Target=" + JSON.stringify(target);
+					url += "&Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("GET", url);
 			},
@@ -279,7 +278,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				var url = require.toUrl("cfapi/domains");
 
 				if (target) {
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 				}
 				if (defaultDomainMode) {
 					if (target) {
@@ -296,7 +295,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				var url = require.toUrl("cfapi/services");
 
 				if (target)
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("GET", url);
 			},
@@ -323,7 +322,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				url += "?Route=" + encodeURIComponent(JSON.stringify(routeObj));
 
 				if (target)
-					url += "&Target=" + JSON.stringify(target);
+					url += "&Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("DELETE", url);
 			},
@@ -332,7 +331,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				var url = require.toUrl("cfapi/routes/" + routeId);
 
 				if (target)
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("DELETE", url);
 			},
@@ -342,7 +341,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				url += "?Orphaned=true";
 
 				if (target)
-					url += "&Target=" + JSON.stringify(target);
+					url += "&Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("DELETE", url);
 			},
@@ -350,7 +349,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 			mapRoute: function(target, appId, routeId) {
 				var url = require.toUrl("cfapi/apps/" + appId + "/routes/" + routeId);
 				if (target)
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("PUT", url);
 			},
@@ -358,7 +357,7 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 			unmapRoute: function(target, appId, routeId) {
 				var url = require.toUrl("cfapi/apps/" + appId + "/routes/" + routeId);
 				if (target)
-					url += "?Target=" + JSON.stringify(target);
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 
 				return this._xhrV1("DELETE", url);
 			},
@@ -376,15 +375,23 @@ define(['i18n!cfui/nls/messages', 'require', 'orion/xhr', 'orion/Deferred', 'ori
 				return this._xhrV1("GET", url);
 			},
 
-			getLogz: function(target, appName){
+			getLogz: function(target, appName, timestamp){
 				if(!appName){
 					var deferred = new Deferred();
 					deferred.reject(messages["appNameIsMissing"]);
 				}
 				var url = require.toUrl("cfapi/logz/" + appName);
-				if(target){
-					url += ("?Target=" + JSON.stringify(target));
+				if (target) {
+					url += "?Target=" + encodeURIComponent(JSON.stringify(target));
 				}
+				if (timestamp) {
+					if (target) {
+						url += "&Timestamp=" + timestamp;
+					} else {
+						url += "?Timestamp=" + timestamp;
+					}
+				}
+				
 				return this._xhrV1("GET", url);
 			},
 		};

@@ -11,7 +11,6 @@
 /*eslint-env browser, amd*/
 define([
 	'i18n!orion/edit/nls/messages',
-	'orion/commands',
 	'orion/i18nUtil',
 	'orion/objects',
 	'orion/webui/littlelib',
@@ -21,12 +20,13 @@ define([
 	'orion/PageUtil',
 	'orion/URITemplate',
 	'orion/Deferred',
-	'orion/fileUtils',
-	'orion/customGlobalCommands'
+	'orion/customGlobalCommands',
+	'orion/bidiUtils'
 ], function(
-	messages, mCommands, i18nUtil, objects, lib, mExplorer, mCommonNav, ProjectCommands,
-	PageUtil, URITemplate, Deferred, mFileUtils, mCustomGlobalCommands
+	messages, i18nUtil, objects, lib, mExplorer, mCommonNav, ProjectCommands,
+	PageUtil, URITemplate, Deferred, mCustomGlobalCommands, bidiUtils
 ) {
+	
 	var CommonNavExplorer = mCommonNav.CommonNavExplorer;
 	var CommonNavRenderer = mCommonNav.CommonNavRenderer;
 	var FileModel = mExplorer.FileModel;
@@ -109,8 +109,6 @@ define([
 		this._dependenciesEventTypes.forEach(function(eventType) { //$NON-NLS-1$//$NON-NLS-0$
 			_self.dependenciesDisplatcher.addEventListener(eventType, _self.dependneciesListener);
 		});
-		
-		this._createRunBar();
 	}
 	ProjectNavExplorer.prototype = Object.create(CommonNavExplorer.prototype);
 	objects.mixin(ProjectNavExplorer.prototype, /** @lends orion.sidebar.ProjectNavExplorer.prototype */ {
@@ -121,7 +119,7 @@ define([
 				this.sidebarNavInputManager.dispatchEvent({
 					type: "editorInputMoved", //$NON-NLS-0$
 					parent: newValue ? (newValue.ChildrenLocation || newValue.ContentLocation) : null,
-					newInput: newValue ? (newValue.ChildrenLocation || newValue.ContentLocation) : null
+					newInput: newValue ? {resource: newValue.ChildrenLocation || newValue.ContentLocation} : null
 				});
 				return;
 			}
@@ -129,30 +127,32 @@ define([
 		},
 		display: function(fileMetadata, redisplay){
 			if(!fileMetadata){
-				return;
+				return new Deferred().reject();
 			}
-			
-			this.fileMetadata = fileMetadata;
-			
-			var parentProject;
-			if (fileMetadata && fileMetadata.Parents && fileMetadata.Parents.length===0){
-				parentProject = fileMetadata;
-			} else if(fileMetadata && fileMetadata.Parents){
-				parentProject = fileMetadata.Parents[fileMetadata.Parents.length-1];
-			}
-			
-			if(!redisplay &&  parentProject && parentProject.Location === this.projectLocation){
-				return;
-			}
-			return this.projectClient.readProject(fileMetadata, this.workspaceMetadata).then(function(projectData){
-				this.projectLocation = parentProject ? parentProject.Location : null;
-				projectData.type = "Project"; //$NON-NLS-0$
-				projectData.Directory = true;
-				projectData.fileMetadata = fileMetadata;
-				return CommonNavExplorer.prototype.display.call(this, projectData, redisplay).then(function() {
-					return this.expandItem(fileMetadata);
-				}.bind(this)).then(function () {
-					this.sidebarNavInputManager.dispatchEvent({type:"projectDisplayed", item: fileMetadata}); //$NON-NLS-0$
+
+			var metadata = fileMetadata;
+			return this.projectClient.getProject(fileMetadata).then(function(project) {
+				fileMetadata = project;
+				this.fileMetadata = fileMetadata;
+				
+				var parentProject;
+				if (fileMetadata && fileMetadata.Parents && fileMetadata.Parents.length===0){
+					parentProject = fileMetadata;
+				} else if(fileMetadata && fileMetadata.Parents){
+					parentProject = fileMetadata.Parents[fileMetadata.Parents.length-1];
+				}
+				
+				if(!redisplay &&  parentProject && parentProject.Location === this.projectLocation){
+					return;
+				}
+				return this.projectClient.readProject(fileMetadata, this.workspaceMetadata).then(function(projectData){
+					this.projectLocation = parentProject ? parentProject.Location : null;
+					projectData.type = "Project"; //$NON-NLS-0$
+					projectData.Directory = true;
+					projectData.fileMetadata = fileMetadata;
+					return CommonNavExplorer.prototype.display.call(this, projectData, redisplay).then(function() {
+						return this.expandItem(fileMetadata);
+					}.bind(this));
 				}.bind(this));
 			}.bind(this));
 		},
@@ -170,8 +170,15 @@ define([
 			return new ProjectNavModel(this.registry, this.treeRoot, this.fileClient, this.parentId, this.excludeFiles, this.excludeFolders, this.projectClient, this.fileMetadata);
 		},
 		reroot: function(item) {
-			this.scopeUp(item.Location);
-			return new Deferred().reject();
+			var defer = new Deferred();
+			this.projectClient.getProject(item).then(function(project) {
+				this.display(project);
+				defer.resolve(item);
+			}.bind(this), function () {
+				this.scopeUp(item.Location);
+				defer.reject();
+			}.bind(this));
+			return defer;
 		},
 		registerCommands: function() {
 			return CommonNavExplorer.prototype.registerCommands.call(this).then(function() {
@@ -188,70 +195,6 @@ define([
 				});
 			}.bind(this));
 		},
-		updateCommands: function(selections){
-			if(this.treeRoot && this.treeRoot.Project && typeof this.treeRoot.Project.launchConfigurations === "undefined"){ //$NON-NLS-0$
-				this.treeRoot.Project.launchConfigurations = [];
-				
-				function doUpdateForLaunchConfigurations(launchConfigurations, selections){
-					this.treeRoot.Project.launchConfigurations = launchConfigurations;
-					CommonNavExplorer.prototype.updateCommands.apply(this, selections);
-				}
-				
-				this.projectClient.getProjectLaunchConfigurations(this.treeRoot.Project).then(function(launchConfigurations){
-					doUpdateForLaunchConfigurations.apply(this, [launchConfigurations, selections]);
-					if(!this.launchConfigurationListener){
-						var _self = this;
-						this.launchConfigurationDispatcher = ProjectCommands.getLaunchConfigurationDispatcher();
-						this.launchConfigurationListener = function(event){
-							if(event.type === "changedVisibility"){ //$NON-NLS-0$
-								_self.updateCommands.apply(_self, selections);
-							} if(event.type === "changedDefault"){ //$NON-NLS-0$
-								return;
-							}
-							_self.selection.getSelections(function(selections){
-								if(event.type === "deleteAll"){
-									for(var i =_self.treeRoot.Project.launchConfigurations.length-1; i>=0; i--){
-										if(_self.treeRoot.Project.launchConfigurations[i].File){
-											_self.treeRoot.Project.launchConfigurations.splice(i,1);
-										}
-									}
-									doUpdateForLaunchConfigurations.apply(_self, [_self.treeRoot.Project.launchConfigurations]);
-									return;
-								}
-								if(event.oldValue){
-									for(var i=0; i<_self.treeRoot.Project.launchConfigurations.length; i++){
-										var lConf = _self.treeRoot.Project.launchConfigurations[i];
-										if((lConf.Name === event.oldValue.Name && lConf.ServiceId === event.oldValue.ServiceId) || (lConf.File && event.oldValue.File && (lConf.File.Location === event.oldValue.File.Location))){
-											if(event.newValue){
-												_self.treeRoot.Project.launchConfigurations[i] = event.newValue;
-												doUpdateForLaunchConfigurations.apply(_self, [_self.treeRoot.Project.launchConfigurations, selections]);
-												return;
-											}
-											_self.treeRoot.Project.launchConfigurations.splice(i, 1);
-											break;
-										}
-									}
-								}
-								if(event.newValue){
-									_self.treeRoot.Project.launchConfigurations.push(event.newValue);
-								}
-								doUpdateForLaunchConfigurations.apply(_self, [_self.treeRoot.Project.launchConfigurations]);
-							});
-						};
-						this._launchConfigurationEventTypes = ["create", "delete", "changedDefault", "deleteAll", "changedVisibility"]; //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-						this._launchConfigurationEventTypes.forEach(function(eventType) {
-							_self.launchConfigurationDispatcher.addEventListener(eventType, _self.launchConfigurationListener);
-						});
-					}
-					
-				}.bind(this), function(error){
-					console.error(error);
-					CommonNavExplorer.prototype.updateCommands.apply(this, selections);
-				}.bind(this));
-			} else {
-				CommonNavExplorer.prototype.updateCommands.apply(this, selections);
-			}
-		},
 		scopeDown: false,
 		scopeUp: function() {
 			var input = PageUtil.matchResourceParameters();
@@ -266,6 +209,7 @@ define([
 		},
 		changedItem: function(item, forceExpand){
 			if(!item || !this.model){
+				this.fileMetadata.children = null;
 				return this.display(this.fileMetadata, true);
 			}
 			if(item.Projects){
@@ -283,33 +227,7 @@ define([
 					_self.launchConfigurationDispatcher.removeEventListener(eventType, _self.launchConfigurationListener);
 				});
 			}
-			if (this._runBar) {
-				this._runBar.destroy();
-				this._runBar = null;
-			}
 			CommonNavExplorer.prototype.destroy.call(this);
-		},
-		_createRunBar: function() {
-			var menuBar = this.sidebar.menuBar;
-			var runBarParent = menuBar.runBarNode;
-			lib.empty(runBarParent);
-			
-			mCustomGlobalCommands.createRunBar({
-				parentNode: runBarParent,
-				projectExplorer: this,
-				serviceRegistry: this.serviceRegistry,
-				commandRegistry: this.commandRegistry,
-				fileClient: this.fileClient,
-				projectCommands: ProjectCommands,
-				projectClient: this.projectClient,
-				progressService: this.progressService,
-				preferences: this.preferences
-			}).then(function(runBar){
-				if (runBar) {
-					// runBar successfully created, set local reference to it
-					this._runBar = runBar;
-				}
-			}.bind(this));
 		}
 	});
 
@@ -325,6 +243,9 @@ define([
 				var span = lib.$(".mainNavColumn", col); //$NON-NLS-0$
 				span.classList.add("projectInformationNode"); //$NON-NLS-0$
 				var nameText = item.Dependency ? item.Dependency.Name : (item.Project ? item.Project.Name : item.Name);
+				if (bidiUtils.isBidiEnabled()) {
+					nameText = bidiUtils.enforceTextDirWithUcc(nameText);
+				}
 				var itemNode = lib.$("a", col); //$NON-NLS-0$
 				if(item.disconnected){
 					nameText = i18nUtil.formatMessage(messages.Disconnected, nameText);
@@ -366,66 +287,11 @@ define([
 		this.explorer = null;
 		var _self = this;
 		var sidebar = this.sidebar;
-		// Switch to project view mode if a project is opened
-		function openProject(metadata){
-			function failed() {
-				if (!sidebar.getActiveViewModeId()) {
-					sidebar.setViewMode(sidebar.getNavigationViewMode().id);
-				}
-			}
-			if (!metadata) {
-				failed();
-				return;
-			}
-			if(_self.lastCheckedLocation === metadata.Location){
-				return;
-			}
-			if (sidebar.getActiveViewModeId() === _self.id) {
-				return;
-			}
-			_self.lastCheckedLocation = metadata.Location;
-			_self.getProject(metadata).then(function(project) {
-				_self.getProjectJson(project).then(function(json) {
-					_self.showViewMode(!!json);
-					if (json) {
-						if (sidebar.getActiveViewModeId() === _self.id) {
-							_self.explorer.display(project);
-						} else {
-							_self.project = project;
-							sidebar.setViewMode(_self.id);
-						}
-					} else {
-						if (!sidebar.getActiveViewModeId()) {
-							sidebar.setViewMode(sidebar.getNavigationViewMode().id);
-						}
-					}
-				}, failed);
-			}, failed);
-			var handleDisplay = function (event) {
-				if(event.item === metadata) {
-					sidebar.sidebarNavInputManager.removeEventListener("projectDisplayed", handleDisplay); //$NON-NLS-0$
-					sidebar.sidebarNavInputManager.dispatchEvent({type:"projectOpened", item: metadata}); //$NON-NLS-0$
-				}
-			};
-			sidebar.sidebarNavInputManager.addEventListener("projectDisplayed", handleDisplay); //$NON-NLS-0$
-		}
+		
 		this.editorInputManager.addEventListener("InputChanged", function(event) { //$NON-NLS-0$
-			openProject(event.metadata);
-		});
-		// Only show project view mode if selection is in a project
-		this.sidebarNavInputManager.addEventListener("selectionChanged", function(event){ //$NON-NLS-0$
-			if (sidebar.getActiveViewModeId() === _self.id) { return; }
-			_self.project = null;
-			var item = event.selections && event.selections.length > 0 ? event.selections[0] : null;
-			if (item) {
-				_self.getProject(item).then(function(project) {
-					_self.getProjectJson(project).then(function(json) {
-						_self.project = project;
-						_self.showViewMode(!!json);
-					});
-				});
-			} else {
-				_self.showViewMode(false);
+ 			_self.showViewMode(event.metadata && !event.metadata.Projects);
+			if (!sidebar.getActiveViewModeId()) {
+				sidebar.setViewMode(sidebar.getDefaultViewModeId());
 			}
 		});
 	}
@@ -455,7 +321,7 @@ define([
 				progressService: this.progressService
 			});
 			this.explorer.workspaceMetadata = this.workspaceMetadata;
-			this.explorer.display(this.project);
+			this.explorer.display(this.editorInputManager.getFileMetadata());
 			this.toolbarNode.parentNode.classList.add("projectNavSidebarWrapper"); //$NON-NLS-0$
 		},
 		destroy: function() {
@@ -464,35 +330,6 @@ define([
 			}
 			this.explorer = null;
 			this.toolbarNode.parentNode.classList.remove("projectNavSidebarWrapper"); //$NON-NLS-0$
-		},
-		getProject: function(metadata) {
-			while (metadata.parent && metadata.parent.parent) {
-				metadata = metadata.parent;
-			}
-			if (metadata.Parents && metadata.Parents.length > 0) {
-				return this.fileClient.read(metadata.Parents[metadata.Parents.length - 1].Location, true);
-			}
-			return new Deferred().resolve(metadata);
-		},
-		getProjectJson: function(metadata) {
-			function getJson(children) {
-				for(var i=0; i<children.length; i++){
-					if(!children[i].Directory && children[i].Name === "project.json"){ //$NON-NLS-0$
-						return children[i];
-					}
-				}
-				return null;
-			}
-			var deferred = new Deferred();
-			if (metadata.Children || metadata.children){
-				deferred.resolve(getJson(metadata.Children || metadata.children));
-			} else if(metadata.ChildrenLocation){
-				this.fileClient.fetchChildren(metadata.ChildrenLocation).then(function(children){
-					metadata.Children = children;
-					deferred.resolve(getJson(children));
-				}, deferred.reject);
-			}
-			return deferred;
 		},
 		showViewMode: function(show) {
 			var sidebar = this.sidebar;
@@ -504,7 +341,6 @@ define([
 			} else {
 				sidebar.removeViewMode(this.id);
 				sidebar.renderViewModeMenu();
-				this.lastCheckedLocation = null;
 			}
 		}
 	});

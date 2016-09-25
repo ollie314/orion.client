@@ -1,6 +1,6 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2014 IBM Corporation and others.
+ * Copyright (c) 2014, 2015 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made
  * available under the terms of the Eclipse Public License v1.0
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
@@ -11,87 +11,29 @@
 
 /*eslint-env browser,amd*/
 /*global URL confirm*/
-define(['i18n!cfui/nls/messages', 'orion/bootstrap', 'orion/objects', 'orion/Deferred', 'orion/cfui/cFClient',
-	'cfui/cfUtil', 'orion/fileClient', 'orion/URITemplate', 'orion/preferences', 'orion/PageLinks',
-	'orion/xhr', 'orion/i18nUtil', 'orion/projectClient'],
+define([
+	'i18n!cfui/nls/messages',
+	'orion/objects',
+	'orion/Deferred',
+	'cfui/cfUtil',
+	'orion/URITemplate',
+	'orion/PageLinks',
+	'orion/i18nUtil'
+], function(messages, objects, Deferred, mCfUtil, URITemplate, PageLinks, i18nUtil) {
 
-function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient, URITemplate, 
-		mPreferences, PageLinks, xhr, i18nUtil, mProjectClient) {
-
-	function PreferencesProvider(location) {
-		this.location = location;
+	function CFDeployService(options) {
+		options = options || {};
+		this.serviceRegistry = options.serviceRegistry;
+		this.projectClient = options.projectClient;
+		this.fileClient = options.fileClient;
+		this.cFService = options.cFService;
 	}
+	CFDeployService.prototype = {
 
-	PreferencesProvider.prototype = {
-		get: function(name) {
-			return xhr("GET", this.location + name, { //$NON-NLS-0$
-				headers: {
-					"Orion-Version": "1" //$NON-NLS-0$ //$NON-NLS-1$
-				},
-				timeout: 15000,
-				log: false
-			}).then(function(result) {
-				return result.response ? JSON.parse(result.response) : null;
-			});
-		},
-		put: function(name, data) {
-			return xhr("PUT", this.location + name, { //$NON-NLS-0$
-				data: JSON.stringify(data),
-				headers: {
-					"Orion-Version": "1" //$NON-NLS-0$ //$NON-NLS-1$
-				},
-				contentType: "application/json;charset=UTF-8", //$NON-NLS-0$
-				timeout: 15000
-			}).then(function(result) {
-				return result.response ? JSON.parse(result.response) : null;
-			});
-		},
-		remove: function(name, key) {
-			return xhr("DELETE", this.location + name + "?key=" + key, { //$NON-NLS-0$ //$NON-NLS-1$
-				headers: {
-					"Orion-Version": "1" //$NON-NLS-0$ //$NON-NLS-1$
-				},
-				contentType: "application/json;charset=UTF-8", //$NON-NLS-0$
-				timeout: 15000
-			}).then(function(result) {
-				return result.response ? JSON.parse(result.response) : null;
-			});
-		}
-	};
-
-	var serviceRegistry;
-	var fileClient;
-	var cFService;
-	var preferences;
-	var projectClient;
-
-	var init = mBootstrap.startup().then(function(core) {
-		serviceRegistry = core.serviceRegistry;
-		fileClient = new mFileClient.FileClient(serviceRegistry);
-
-		cFService = new CFClient.CFService();
-
-		/* register hacked pref service */
-		var temp = document.createElement('a'); //$NON-NLS-0$
-		temp.href = "../prefs/user"; //$NON-NLS-0$
-		var location = temp.href;
-
-
-		var service = new PreferencesProvider(location);
-		serviceRegistry.registerService("orion.core.preference.provider", service, {}); //$NON-NLS-0$
-		preferences = new mPreferences.PreferencesService(serviceRegistry);
-
-		/* used to interact with launch configurations */
-		projectClient = new mProjectClient.ProjectClient(serviceRegistry, fileClient);
-	});
-
-	function DeployService() {}
-	DeployService.prototype = {
-
-		constructor: DeployService,
+		constructor: CFDeployService,
 
 		_getTargets: function() {
-			return mCfUtil.getTargets(preferences);
+			return mCfUtil.getTargets(this.serviceRegistry.getService("orion.core.preference")); //$NON-NLS-1$
 		},
 
 		getDeployProgressMessage: function(project, launchConf) {
@@ -117,6 +59,9 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 		},
 
 		_getAdditionalLaunchConfigurations: function(launchConf, project, rawFile) {
+			var projectClient = this.projectClient;
+			var cFService = this.cFService;
+			var fileClient = this.fileClient;
 			return projectClient.getLaunchConfigurationsDir(project).then(function(launchConfDir) {
 				if (!launchConfDir) {
 					return null;
@@ -152,16 +97,35 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 		},
 
 		_findManifest: function(location){
-			return fileClient.fetchChildren(location).then(function(children){
-				var manifests = children.filter(function(child) {
-					return child.Name === "manifest.yml"; //$NON-NLS-0$
-				});
+			
+			location = location.replace("//", "/");
+			
+			var manifestFile = location.substring(location.lastIndexOf("/") + 1);
+			var pathToFile = location.substring(0, location.lastIndexOf("/") + 1);
+			
+			if(manifestFile == ""){
+				return this.fileClient.fetchChildren(location).then(function(children){
+					var manifests = children.filter(function(child) {
+						return child.Name === "manifest.yml"; //$NON-NLS-0$
+					});
 
-				if(manifests.length === 0)
-					return null;
-				else
-					return manifests[0];
-			});
+					if(manifests.length === 0)
+						return null;
+					else
+						return manifests[0];
+				});
+			} else {
+				return this.fileClient.fetchChildren(pathToFile).then(function(children){
+					var manifests = children.filter(function(child) {
+						return child.Name === manifestFile; //$NON-NLS-0$
+					});
+
+					if(manifests.length === 0)
+						return null;
+					else
+						return manifests[0];
+				});
+			}
 		},
 
 		deploy: function(project, launchConf) {
@@ -176,7 +140,7 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 			}
 
 			if (params.user && params.password) {
-				cFService.login(target.Url, params.user, params.password).then(
+				this.cFService.login(target.Url, params.user, params.password).then(
 
 				function() {
 					that._deploy(project, target, launchConf, deferred);
@@ -208,23 +172,11 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 				return deferred;
 			}
 
-			/* check if there's a manifest in the selected sub-folder */
-			self._findManifest(relativeFilePath).then(function(manifest){
-
-				if(manifest !== null)
-					/* use the sub-folder manifest */
-					deferred.resolve({
-						path: relativeFilePath,
-						appPath: appPath
-					});
-				else
-					/* use the project as deployment path */
-					deferred.resolve({
-						path: project.ContentLocation,
-						appPath: "" /* Note that the appPath has to be updated as well */
-					});
-
-			}, deferred.reject);
+			/* use the project as deployment path */
+			deferred.resolve({
+				path: relativeFilePath,
+				appPath: appPath || "" /* Note that the appPath has to be updated as well */
+			});
 
 			return deferred;
 		},
@@ -234,7 +186,7 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 			var appName = launchConfParams.Name;
 			var appPath = launchConf.Path;
 			var launchConfName = launchConf.ConfigurationName;
-			
+
 			if (target && appName) {
 				var errorHandler = function(error) {
 					/* default cf error message decoration */
@@ -244,62 +196,74 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 				};
 
 				var self = this;
-				this._getAdditionalLaunchConfigurations(launchConf, project).then(function performPush(manifest) {
-					if (manifest === null) {
-						/* could not find the launch configuration manifest, get the main manifest.yml if present */
-						self._findManifest(project.ContentLocation).then(function(manifest) {
 
-							if (manifest === null) {
-								if (appName) {
-									// a minimal manifest contains just the application name
-									performPush({
-										applications: [{
-											"name": appName
-										}]
-									});
-								} else {
-									/* the deployment will not succeed anyway */								
-									deferred.reject({
-										State: "NOT_DEPLOYED", //$NON-NLS-0$
-										Severity: "Error", //$NON-NLS-0$
-										Message: messages["Could not find the launch configuration manifest"]
-									});									
-								}
-								
-							} else {
-								cFService.getManifestInfo(manifest.Location, true).then(function(manifest) {
-									performPush(manifest.Contents);
-								}, deferred.reject);
-							}
-						}.bind(this), errorHandler);
-					} else {
-						var devMode = launchConfParams.DevMode;
-						var appPackager;
-						
-						var instrumentation = launchConfParams.Instrumentation || {};
-						var mergedInstrumentation = objects.clone(instrumentation);
-						if (devMode && devMode.On) {
-							appPackager = devMode.Packager;
-							var devInstrumentation = devMode.Instrumentation;
-							
-							/* Manifest instrumentation contains only simple key, value entries */
-							objects.mixin(mergedInstrumentation, devInstrumentation);
+				var getTargets = this._getTargets();
+				getTargets.then(function(result){
+
+					result.clouds.forEach(function(cloud){
+						if(cloud.Url === target.Url && cloud.ManageUrl){
+							target.ManageUrl = cloud.ManageUrl;
 						}
+					});
 
-						cFService.pushApp(target, appName, decodeURIComponent(project.ContentLocation + appPath), manifest, appPackager, mergedInstrumentation).then(function(result) {
-							var expandedURL = new URITemplate("{+OrionHome}/edit/edit.html#{,ContentLocation}").expand({ //$NON-NLS-0$
-								OrionHome: PageLinks.getOrionHome(),
-								ContentLocation: project.ContentLocation,
-							});
+					self._getAdditionalLaunchConfigurations(launchConf, project).then(function performPush(manifest) {
+						if (manifest === null) {
+							/* could not find the launch configuration manifest, get the main manifest.yml if present */
+							self._findManifest(project.ContentLocation + appPath).then(function(manifest) {
 
-							var appName = result.App.name || result.App.entity.name;
-							mCfUtil.prepareLaunchConfigurationContent(launchConfName, target, appName, appPath, instrumentation, devMode).then(
-							deferred.resolve, deferred.reject);
-						}, errorHandler);
-					}
+								if (manifest === null) {
+									if (appName) {
+										// a minimal manifest contains just the application name
+										performPush({
+											applications: [{
+												"name": appName
+											}]
+										});
+									} else {
+										/* the deployment will not succeed anyway */								
+										deferred.reject({
+											State: "NOT_DEPLOYED", //$NON-NLS-0$
+											Severity: "Error", //$NON-NLS-0$
+											Message: messages["Could not find the launch configuration manifest"]
+										});									
+									}
+									
+								} else {
+									self.cFService.getManifestInfo(manifest.Location, true).then(function(manifest) {
+										performPush(manifest.Contents);
+									}, deferred.reject);
+								}
+							}.bind(self), errorHandler);
+						} else {
+							var devMode = launchConfParams.DevMode;
+							var appPackager;
+							
+							var instrumentation = launchConfParams.Instrumentation || {};
+							var mergedInstrumentation = objects.clone(instrumentation);
+							if (devMode && devMode.On) {
+								appPackager = devMode.Packager;
+								var devInstrumentation = devMode.Instrumentation;
+								
+								/* Manifest instrumentation contains only simple key, value entries */
+								objects.mixin(mergedInstrumentation, devInstrumentation);
+							}
+	
+							self.cFService.pushApp(target, appName, decodeURIComponent(project.ContentLocation + appPath), manifest, appPackager, mergedInstrumentation).then(function(result) {
+								var expandedURL = new URITemplate("{+OrionHome}/edit/edit.html#{,ContentLocation}").expand({ //$NON-NLS-0$
+									OrionHome: PageLinks.getOrionHome(),
+									ContentLocation: project.ContentLocation,
+								});
+	
+								var appName = result.App.name || result.App.entity.name;
+								mCfUtil.prepareLaunchConfigurationContent(launchConfName, target, appName, appPath, instrumentation, devMode).then(
+								deferred.resolve, deferred.reject);
+							}, errorHandler);
+						}
+					}, errorHandler);
 				}, errorHandler);
 
 			} else {
+				var serviceRegistry = this.serviceRegistry;
 				var wizardReferences = serviceRegistry.getServiceReferences("orion.project.deploy.wizard"); //$NON-NLS-0$
 				
 				var feasibleDeployments = [];
@@ -337,7 +301,7 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 			}
 
 			if (params.user && params.password) {
-				cFService.login(target.Url, params.user, params.password).then(
+				this.cFService.login(target.Url, params.user, params.password).then(
 
 				function() {
 					that._edit(project, target, launchConf, deferred);
@@ -360,6 +324,7 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 			var appPath = launchConf.Path;
 			var launchConfName = launchConf.ConfigurationName;
 			
+			var serviceRegistry = this.serviceRegistry;
 			var wizardReferences = serviceRegistry.getServiceReferences("orion.project.deploy.wizard"); //$NON-NLS-0$
 			
 			var feasibleDeployments = [];
@@ -386,7 +351,7 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 
 		_retryWithLogin: function(props, func) {
 			if (props.user && props.password) {
-				return cFService.login(props.Target.Url, props.user, props.password).then(function() {
+				return this.cFService.login(props.Target.Url, props.user, props.password).then(function() {
 					return func(props);
 				}, function(error) {
 					error.Retry = {
@@ -407,13 +372,13 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 		},
 
 		getState: function(launchConf) {
-			var params = launchConf.Params || {};
+			var params = launchConf.Params || launchConf.Parameters || {};
 			return this._retryWithLogin(params, this._getStateCF.bind(this));
 		},
 
 		_getStateCF: function(params) {
 			if (params.Target && params.Name) {
-				return cFService.getApp(params.Target, params.Name).then(function(result) {
+				return this.cFService.getApp(params.Target, params.Name).then(function(result) {
 					var app = result;
 					var appState = {
 						Name: app.name,
@@ -428,14 +393,23 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 					}
 					return appState;
 				}, function(error) {
-					/* default cf error message decoration */
-					error = mCfUtil.defaultDecorateError(error, params.Target);
-					if (error.HttpCode === 404) {
-						return error;
-					} else {
-						throw error;
-					}
-				});
+					return this._getTargets().then(function(result){
+						if(result.clouds){
+							result.clouds.forEach(function(data){
+								if (params.Target.Url === data.Url){
+									params.Target.meta = data;
+								}
+							});
+						}
+						/* default cf error message decoration */
+						error = mCfUtil.defaultDecorateError(error, params.Target);
+						if (error.HttpCode === 404) {
+							return error;
+						} else {
+							throw error;
+						}
+					});
+				}.bind(this));
 			};
 			return new Deferred().reject("missing target and/or name"); // do we need this or will cfService.startApp check this for us
 		},
@@ -447,7 +421,7 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 
 		_startCF: function(params) {
 			if (params.Target && params.Name) {
-				return cFService.startApp(params.Target, params.Name, undefined, params.Timeout).then(function(result) {
+				return this.cFService.startApp(params.Target, params.Name, undefined, params.Timeout).then(function(result) {
 					return {
 						CheckState: true
 					};
@@ -466,12 +440,12 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 
 		stop: function(launchConf) {
 			var params = launchConf.Params || {};
-			return this._retryWithLogin(params, this._stopCF);
+			return this._retryWithLogin(params, this._stopCF.bind(this));
 		},
 
 		_stopCF: function(params, deferred) {
 			if (params.Target && params.Name) {
-				return cFService.stopApp(params.Target, params.Name).then(function(result) {
+				return this.cFService.stopApp(params.Target, params.Name).then(function(result) {
 					return {
 						CheckState: true
 					};
@@ -493,27 +467,9 @@ function(messages, mBootstrap, objects, Deferred, CFClient, mCfUtil, mFileClient
 		 * Delegates to @ref cFClient.js->getDeploymentPlans()
 		 */
 		getDeploymentPlans: function(projectContentLocation) {
-			return cFService.getDeploymentPlans(projectContentLocation);
+			return this.cFService.getDeploymentPlans(projectContentLocation);
 		}
 	};
 
-	function createDeferredMethod(instance, method) {
-		return function() {
-			var args = arguments;
-			return init.then(function() {
-				return instance[method].apply(instance, Array.prototype.slice.call(args));
-			});
-		};
-	}
-
-	function CFDeployService() {
-		var deployService = new DeployService();
-		var method;
-		for (method in deployService) {
-			if (typeof deployService[method] === 'function') { //$NON-NLS-0$
-				this[method] = createDeferredMethod(deployService, method);
-			}
-		}
-	}
 	return CFDeployService;
 });

@@ -10,7 +10,6 @@
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
 /*eslint-env amd*/
-/* global doctrine */
 define([
 'orion/objects',
 'orion/metrics'
@@ -77,8 +76,6 @@ define([
             });
 		}
 	});
-	
-	CssQuickFixes.prototype.contructor = CssQuickFixes;
 	
 	return {
 		CssQuickFixes: CssQuickFixes

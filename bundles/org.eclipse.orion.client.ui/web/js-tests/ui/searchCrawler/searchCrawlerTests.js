@@ -326,7 +326,7 @@ define(['chai/chai', 'js-tests/ui/searchCrawler/mockFileClient', 'orion/crawler/
 			name: "Conf",
 			extension: ["conf"]
 		},
-		{	id: "text/sh",
+		{	id: "application/x-sh",
 			"extends": "text/plain",
 			name: "sh",
 			extension: ["sh"]
@@ -421,7 +421,7 @@ define(['chai/chai', 'js-tests/ui/searchCrawler/mockFileClient', 'orion/crawler/
 		var d  = new Deferred();
 		crawler.buildSkeleton(function() {}, //Doing nothing for onBegin
 			function(){
-				crawler.searchName(searchParam, function(searchResult){
+				crawler.searchName(searchParam).then(function(searchResult){
 					try {
 						assertSearchReresultEqual(expected,	searchResult);
 						d.resolve();

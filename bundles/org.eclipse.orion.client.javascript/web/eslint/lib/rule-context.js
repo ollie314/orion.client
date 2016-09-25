@@ -1,116 +1,166 @@
 /* eslint-env amd */
 define([
-], function() {
-/**
- * @fileoverview RuleContext utility for rules
- * @author Nicholas C. Zakas
- */
-"use strict";
+	'./rule-fixer',
+], function(RuleFixer) {
+	/**
+	 * @fileoverview RuleContext utility for rules
+	 * @author Nicholas C. Zakas
+	 * @copyright 2013 Nicholas C. Zakas. All rights reserved.
+	 * See LICENSE file in root directory for full license.
+	 */
+	"use strict";
+	//------------------------------------------------------------------------------
+	// Constants
+	//------------------------------------------------------------------------------
 
-//------------------------------------------------------------------------------
-// Constants
-//------------------------------------------------------------------------------
+	var PASSTHROUGHS = [
+		"getAncestors",
+		"getDeclaredVariables",
+		"getFilename",
+		"getScope",
+		"markVariableAsUsed",
 
-var PASSTHROUGHS = [
-        "getAllComments",
-        "getAncestors",
-        "getComments",
-        "getFilename",
-        "getFirstToken",
-        "getFirstTokens",
-        "getJSDocComment",
-        "getLastToken",
-        "getLastTokens",
-        "getNodeByRangeIndex",
-        "getScope",
-        "getSource",
-        "getSourceLines",
-        "getTokenAfter",
-        "getTokenBefore",
-        "getTokenByRangeStart",
-        "getTokens",
-        "getTokensAfter",
-        "getTokensBefore",
-        "getTokensBetween"
-    ];
+		// DEPRECATED
+		"getAllComments",
+		"getComments",
+		"getFirstToken",
+		"getFirstTokens",
+		"getJSDocComment",
+		"getLastToken",
+		"getLastTokens",
+		"getNodeByRangeIndex",
+		"getSource",
+		"getSourceLines",
+		"getTokenAfter",
+		"getTokenBefore",
+		"getTokenByRangeStart",
+		"getTokens",
+		"getTokensAfter",
+		"getTokensBefore",
+		"getTokensBetween"
+	];
 
-//------------------------------------------------------------------------------
-// Rule Definition
-//------------------------------------------------------------------------------
+	//------------------------------------------------------------------------------
+	// Typedefs
+	//------------------------------------------------------------------------------
 
-/**
- * Acts as an abstraction layer between rules and the main eslint object.
- * @constructor
- * @param {string} ruleId The ID of the rule using this object.
- * @param {eslint} eslint The eslint object.
- * @param {number} severity The configured severity level of the rule.
- * @param {array} options The configuration information to be added to the rule.
- * @param {object} settings The configuration settings passed from the config file.
- * @param {object} ecmaFeatures The ecmaFeatures settings passed from the config file.
- * @param {Object} env The backing environment 
- */
-function RuleContext(ruleId, eslint, severity, options, settings, ecmaFeatures, env) { //ORION
-    /**
-     * ORION
-     */
-    Object.defineProperty(this, "env", {
-       value: env 
-    });
-    /**
-     * The read-only ID of the rule.
-     */
-    Object.defineProperty(this, "id", {
-        value: ruleId
-    });
+	/**
+	 * An error message description
+	 * @typedef {Object} MessageDescriptor
+	 * @property {string} nodeType The type of node.
+	 * @property {Location} loc The location of the problem.
+	 * @property {string} message The problem message.
+	 * @property {Object} [data] Optional data to use to fill in placeholders in the
+	 *      message.
+	 * @property {Function} fix The function to call that creates a fix command.
+	 */
 
-    /**
-     * The read-only options of the rule
-     */
-    Object.defineProperty(this, "options", {
-        value: options
-    });
+	//------------------------------------------------------------------------------
+	// Rule Definition
+	//------------------------------------------------------------------------------
 
-    /**
-     * The read-only settings shared between all rules
-     */
-    Object.defineProperty(this, "settings", {
-        value: settings
-    });
+	/**
+	 * Acts as an abstraction layer between rules and the main eslint object.
+	 * @constructor
+	 * @param {string} ruleId The ID of the rule using this object.
+	 * @param {eslint} eslint The eslint object.
+	 * @param {number} severity The configured severity level of the rule.
+	 * @param {Array} options The configuration information to be added to the rule.
+	 * @param {Object} settings The configuration settings passed from the config file.
+	 * @param {Object} parserOptions The parserOptions settings passed from the config file.
+	 * @param {Object} parserPath The parser setting passed from the config file.
+	 * @param {Object} meta The metadata of the rule
+	 */
+	function RuleContext(ruleId, eslint, severity, options, settings, parserOptions, parserPath, meta, env) {
 
-    /**
-     * The read-only ecmaFeatures shared across all rules
-     */
-    Object.defineProperty(this, "ecmaFeatures", {
-        value: Object.create(ecmaFeatures)
-    });
-    Object.freeze(this.ecmaFeatures);
+		// public.
+		this.id = ruleId;
+		this.options = options;
+		this.settings = settings;
+		this.parserOptions = parserOptions;
+		this.parserPath = parserPath;
+		this.meta = meta;
 
-    // copy over passthrough methods
-    PASSTHROUGHS.forEach(function(name) {
-        this[name] = function() {
-            return eslint[name].apply(eslint, arguments);
-        };
-    }, this);
+		// private.
+		this.eslint = eslint;
+		this.severity = severity;
 
-    /**
-     * Passthrough to eslint.report() that automatically assigns the rule ID and severity.
-     * @param {ASTNode} node The AST node related to the message.
-     * @param {Object=} location The location of the error.
-     * @param {string} message The message to display to the user.
-     * @param {Object} opts Optional template data which produces a formatted message
-     *     with symbols being replaced by this object's values.
-     * @returns {void}
-     */
-    this.report = function(node, location, message, opts) {
-        eslint.report(ruleId, severity, node, location, message, opts);
-    };
+		// ORION
+		this.env = env;
+		//Object.freeze(this); ORION we use the context to store the tern object and store temporary lines for nls checks.
+	}
 
-}
+	RuleContext.prototype = {
+		constructor: RuleContext,
 
-RuleContext.prototype = {
-    constructor: RuleContext
-};
+		/**
+		 * Passthrough to eslint.getSourceCode().
+		 * @returns {SourceCode} The SourceCode object for the code.
+		 */
+		getSourceCode: function() {
+			return this.eslint.getSourceCode();
+		},
 
- return RuleContext;
+		/**
+		 * Passthrough to eslint.report() that automatically assigns the rule ID and severity.
+		 * @param {ASTNode|MessageDescriptor} nodeOrDescriptor The AST node related to the message or a message
+		 *      descriptor.
+		 * @param {Object=} location The location of the error.
+		 * @param {string} message The message to display to the user.
+		 * @param {Object} opts Optional template data which produces a formatted message
+		 *     with symbols being replaced by this object's values.
+		 * @returns {void}
+		 */
+		report: function(nodeOrDescriptor, location, message, opts) {
+			var descriptor,
+				fix = null;
+
+			// check to see if it's a new style call
+			if (arguments.length === 1) {
+				descriptor = nodeOrDescriptor;
+
+				// if there's a fix specified, get it
+				if (typeof descriptor.fix === "function") {
+					fix = descriptor.fix(new RuleFixer());
+				}
+
+				this.eslint.report(
+					this.id,
+					this.severity,
+					descriptor.node,
+					descriptor.loc || descriptor.node.loc.start,
+					descriptor.message,
+					descriptor.data,
+					fix,
+					this.meta
+				);
+
+				return;
+			}
+
+			// old style call
+			this.eslint.report(
+				this.id,
+				this.severity,
+				nodeOrDescriptor,
+				location,
+				message,
+				opts,
+				this.meta
+			);
+		},
+		
+		getTern : function() {
+			return this.settings.tern;
+		}
+	};
+
+	// Copy over passthrough methods. All functions will have 5 or fewer parameters.
+	PASSTHROUGHS.forEach(function(name) {
+		this[name] = function(a, b, c, d, e) {
+			return this.eslint[name](a, b, c, d, e);
+		};
+	}, RuleContext.prototype);
+
+	return RuleContext;
 });
-

@@ -25,7 +25,7 @@ define(['i18n!orion/settings/nls/messages', 'orion/bootstrap', 'orion/status', '
 		var operationsClient = new mOperationsClient.OperationsClient(serviceRegistry);
 		var preferencesStatusService = new mStatus.StatusReportingService(serviceRegistry, operationsClient, "statusPane", "notifications", "notificationArea"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
 		var commandRegistry = new mCommandRegistry.CommandRegistry({ });
-		new mProgress.ProgressService(serviceRegistry, operationsClient, commandRegistry);
+		var progressService = new mProgress.ProgressService(serviceRegistry, operationsClient, commandRegistry);
 
 		var fileClient = new mFileClient.FileClient(serviceRegistry);
 		var searcher = new mSearchClient.Searcher({
@@ -42,9 +42,7 @@ define(['i18n!orion/settings/nls/messages', 'orion/bootstrap', 'orion/status', '
 			tooltip: messages['clearThemeAndEditorSettings.tooltip'],  //$NON-NLS-0$
 			id: "orion.clearThemes", //$NON-NLS-0$
 			callback: function(data) {
-				preferences.getPreferences('/themes', 2).then(function(prefs) { //$NON-NLS-0$
-					prefs.put("styles", null); //$NON-NLS-0$
-					prefs.put("selected", null); //$NON-NLS-0$
+				preferences.put('/themes', {styles: null, selected: null}).then(function() { //$NON-NLS-0$
 					preferencesStatusService.setMessage("Theme settings have been cleared.");
 				});
 			}});
@@ -63,15 +61,17 @@ define(['i18n!orion/settings/nls/messages', 'orion/bootstrap', 'orion/status', '
 		var containerParameters = { preferences: preferences, 
 									registry: serviceRegistry,
 									preferencesStatusService: preferencesStatusService,
+									progressService: progressService,
 									commandService: commandRegistry,
 									preferenceDialogService: preferenceDialogService,
 									settingsCore: core,
 									pageActions: "pageActions", //$NON-NLS-0$
 									userClient: usersClient,
-									settingsRegistry: settingsRegistry
+									settingsRegistry: settingsRegistry,
+									fileClient: fileClient
 									};
 									
-		lib.node("categoriesTitle").innerHTML = messages["Categories"]; //$NON-NLS-1$ //$NON-NLS-0$
+		lib.node("categoriesTitle").textContent = messages["Categories"]; //$NON-NLS-1$ //$NON-NLS-0$
 		var settingsContainer = new SettingsContainer( containerParameters, lib.node("categoriesContainer"), lib.node("settings")); //$NON-NLS-0$
 		settingsContainer.show();
 

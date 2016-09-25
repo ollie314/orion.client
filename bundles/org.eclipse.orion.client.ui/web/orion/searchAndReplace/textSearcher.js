@@ -14,10 +14,11 @@
 define([
 	'i18n!orion/search/nls/messages', 
 	'orion/editor/find', 'orion/commands', 
+	'orion/bidiUtils',
 	'orion/objects',
 	'orion/inputCompletion/inputCompletion', 
 	'orion/webui/littlelib' ], 
-	function(messages, mFind, mCommands, objects, mInputCompletion, lib){
+	function(messages, mFind, mCommands, bidiUtils, objects, mInputCompletion, lib){
 	
 	var MAX_RECENT_FIND_NUMBER = 30;
 	function TextSearcher(editor, serviceRegistry, cmdservice, undoStack, options) {
@@ -60,9 +61,11 @@ define([
 				this._createActionTable();
 				findDiv = document.getElementById("localSearchFindWith"); //$NON-NLS-0$
 			}
+			bidiUtils.initInputField(findDiv);
+			bidiUtils.initInputField(document.getElementById("localSearchReplaceWith"));
 			if (findString) {
 				findDiv.value = findString;
-			}
+			}			
 			if (replaceString) {
 				var replaceDiv = document.getElementById("localSearchReplaceWith"); //$NON-NLS-0$
 				replaceDiv.value = replaceString;
@@ -102,13 +105,13 @@ define([
 				};
 				parentDiv.appendChild(searchStringInput);
 				that._initCompletion(searchStringInput);				
-				that._createButton(messages["Next"], parentDiv, function() { //$NON-NLS-0$
+				that._createButton(messages["Next"], parentDiv, function(evt) { //$NON-NLS-0$
 					that._addRecentfind(that.getFindString());
-					that.find(true);
+					that.find(!evt.shiftKey);
 				});			
-				that._createButton(messages["Previous"], parentDiv, function() { //$NON-NLS-0$
+				that._createButton(messages["Previous"], parentDiv, function(evt) { //$NON-NLS-0$
 					that._addRecentfind(that.getFindString());
-					that.find(false);
+					that.find(evt.shiftKey);
 				});			
 				
 				var readonly = that._editor.getTextView().getOptions("readonly"); //$NON-NLS-0$
@@ -155,11 +158,14 @@ define([
 						optionMenu.dropdown.close(true);
 					});
 					
-				mCommands.createCheckedMenuItem(optionMenu.menu,  messages["Incremental search"], that._incremental,
-					function(event) {
-						that.setOptions({incremental: event.target.checked});
-						optionMenu.dropdown.close(true);
-					});
+				//Allow extended TextModelFactory to disable incremental find
+				if (!this._incrementalDisabled) {
+					mCommands.createCheckedMenuItem(optionMenu.menu,  messages["Incremental search"], that._incremental,
+						function(event) {
+							that.setOptions({incremental: event.target.checked});
+							optionMenu.dropdown.close(true);
+						});
+				}
 					
 				mCommands.createCheckedMenuItem(optionMenu.menu,  messages["Whole Word"], that._wholeWord,
 					function(event) {
@@ -189,8 +195,7 @@ define([
 			function(){that.hide();});
 		},
 		_storeRecentFind: function(recentFinds, eventTarget, deleting){
-			this._serviceRegistry.getService("orion.core.preference").getPreferences("/window/favorites").then(function(prefs) {  //$NON-NLS-1$ //$NON-NLS-0$
-				prefs.put("recentFind", recentFinds); //$NON-NLS-0$
+			this._serviceRegistry.getService("orion.core.preference").put("/window/favorites", {recentFind: recentFinds}).then(function() {  //$NON-NLS-1$ //$NON-NLS-2$
 				if(eventTarget) {
 					window.setTimeout(function() {
 						eventTarget.dispatchEvent({type:"inputDataListChanged", deleting: deleting}); //$NON-NLS-0$
@@ -206,9 +211,9 @@ define([
 			if(this._completion && this._completion.hasValueOf(findString)){
 				return;
 			}
-			this._serviceRegistry.getService("orion.core.preference").getPreferences("/window/favorites").then(function(prefs) {  //$NON-NLS-1$ //$NON-NLS-0$
+			this._serviceRegistry.getService("orion.core.preference").get("/window/favorites").then(function(prefs) {  //$NON-NLS-1$ //$NON-NLS-2$
 				var i;
-				var searches = prefs.get("recentFind"); //$NON-NLS-0$
+				var searches = prefs["recentFind"]; //$NON-NLS-0$
 				if (typeof searches === "string") { //$NON-NLS-0$
 					searches = JSON.parse(searches);
 				}
@@ -233,9 +238,9 @@ define([
 			if(typeof searchName !== "string" || !searchName ){ //$NON-NLS-0$
 				return;
 			}
-			this._serviceRegistry.getService("orion.core.preference").getPreferences("/window/favorites").then(function(prefs) {  //$NON-NLS-1$ //$NON-NLS-0$
+			this._serviceRegistry.getService("orion.core.preference").get("/window/favorites").then(function(prefs) {  //$NON-NLS-1$ //$NON-NLS-2$
 				var i;
-				var searches = prefs.get("recentFind"); //$NON-NLS-0$
+				var searches = prefs["recentFind"]; //$NON-NLS-0$
 				if (typeof searches === "string") { //$NON-NLS-0$
 					searches = JSON.parse(searches);
 				}
@@ -256,8 +261,8 @@ define([
 			} else { //Create the inputCompletion lazily.
 				//Required. Reading recent&saved search from user preference. Once done call the uiCallback
 				var defaultProposalProvider = function(uiCallback){
-					this._serviceRegistry.getService("orion.core.preference").getPreferences("/window/favorites").then(function(prefs) {  //$NON-NLS-1$ //$NON-NLS-0$
-						var searches = prefs.get("recentFind"); //$NON-NLS-0$
+					this._serviceRegistry.getService("orion.core.preference").get("/window/favorites").then(function(prefs) {  //$NON-NLS-1$ //$NON-NLS-2$
+						var searches = prefs["recentFind"]; //$NON-NLS-0$
 						if (typeof searches === "string") { //$NON-NLS-0$
 							searches = JSON.parse(searches);
 						}
@@ -329,11 +334,7 @@ define([
 				}
 				evt.cancelBubble = true;
 				this._addRecentfind(this.getFindString());
-				if (evt.keyCode === 13) {
-					this.find(this._reverse ? evt.shiftKey : !evt.shiftKey);
-				} else {
-					this.find(!evt.shiftKey);
-				}
+				this.find(!evt.shiftKey);
 				return false;
 			}
 			if( ctrlKeyOnly &&  evt.keyCode === 82 /*"r"*/){

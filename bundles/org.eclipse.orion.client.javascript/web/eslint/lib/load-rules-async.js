@@ -1,120 +1,239 @@
 /*******************************************************************************
  * @license
- * Copyright (c) 2013, 2015 IBM Corporation and others.
- * All rights reserved. This program and the accompanying materials are made 
- * available under the terms of the Eclipse Public License v1.0 
- * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
- * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html). 
+ * Copyright (c) 2013, 2016 IBM Corporation and others.
+ * All rights reserved. This program and the accompanying materials are made
+ * available under the terms of the Eclipse Public License v1.0
+ * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution
+ * License v1.0 (http://www.eclipse.org/org/documents/edl-v10.html).
  *
  * Contributors:
  *	 IBM Corporation - initial API and implementation
  *******************************************************************************/
-/*eslint-env amd*/
+/*eslint-env amd, worker */
 /**
  * Implements eslint's load-rules API for AMD. Our rules are loaded as AMD modules.
  */
 define([
-'./util',
-'logger',
+'./utils/util',
 'javascript/finder',
-'estraverse',
-'orion/editor/stylers/application_javascript/syntax'
-], function(util, Logger, Finder, Estraverse, JsSyntax) {
+'i18n!javascript/nls/problems',
+'estraverse/estraverse',
+'orion/editor/stylers/application_javascript/syntax',
+'./rules/accessor-pairs',
+'./rules/no-control-regex',
+'./rules/no-duplicate-case',
+'./rules/no-else-return',
+'./rules/no-empty-character-class',
+'./rules/no-empty-label',
+'./rules/no-eq-null',
+'./rules/no-extra-boolean-cast',
+'./rules/no-extra-parens',
+'./rules/no-invalid-regexp',
+'./rules/no-negated-in-lhs',
+'./rules/no-obj-calls',
+'./rules/no-self-compare',
+'./rules/no-irregular-whitespace',
+'./rules/no-const-assign',
+'./rules/no-implicit-coercion',
+'./rules/no-extra-bind',
+'./rules/no-extend-native',
+'./rules/no-lone-blocks',
+'./rules/quotes',
+'./rules/yoda',
+'./rules/no-param-reassign',
+'./rules/no-native-reassign',
+'./rules/no-unused-expressions',
+'./rules/no-invalid-this',
+'./rules/no-trailing-spaces'
+], function(util, Finder, ProblemMessages, Estraverse, JsSyntax,
+		accessorPairs, noControlRegex, noDuplicateCase, noElseReturn, noEmptyCharClasses, 
+		noEmptyLabel, noEqNull, noExtraBoolCast, noExtraParens, noInvalidRegExp, noNegatedInLhs,
+		noObjCalls, noSelfCompare, noIrregularWhitespace, noConstAssign, noImplicitCoercion,
+		noExtraBind, noExtendNative, noLoneBlocks, quotes, yoda, noParamReassign, noNativeReassign,
+		noUnusedExpressions, noInvalidThis, noTrailingSpaces) {
+	
+	var nodeModules = {
+		"buffer": true,
+		"child_process": true,
+		"cluster": true, 
+		"crypto": true, 
+		"dns": true, 
+		"domain": true, 
+		"events": true, 
+		"fs": true, 
+		"http": true, 
+		"https": true, 
+		"net": true, 
+		"os": true, 
+		"path": true, 
+		"punycode": true, 
+		"readline": true, 
+		"stream": true, 
+		"string_decoder": true, 
+		"tls":true, 
+		"tty": true, 
+		"dgram": true, 
+		"url": true, 
+		"util": true, 
+		"v8": true, 
+		"vm": true, 
+		"zlib": true
+	};
 	
     var rules = {
-        "curly" : {
-            description: 'Require curly braces for all control statements',
-            rule: function(context) {
-        		/**
-        		 * Checks the following AST element for a BlockStatement
-        		 */
-        		function checkBlock(node) {
-        			try {
+    	/** @callback */
+        "check-tern-plugin": function(context) {
+        	function checkProject(node) {
+        		function getEnvNode(envname) {
+    				var comment = Finder.findDirective(node, "eslint-env"); //$NON-NLS-1$
+    				if(comment) {
+    					var idx = comment.value.indexOf(envname);
+    					if(idx > -1) {
+    						var start = comment.range[0]+idx+2, //add 2 because the spec says block value starts exclude /*
+    							end = start+envname.length;
+    						return {type: "EnvName", range: [start, end], loc: comment.loc}; //$NON-NLS-1$
+    					}
+    				}
+        		}
+        		// Don't report problems on HTML files that have no script blocks
+        		if (node.end === 0){
+        			return;
+        		}
+                if(context.env){
+                	var envKeys = Object.keys(context.env);
+                	if (envKeys.length > 0){
+                		var tern = context.getTern();
+                		if (tern){
+       						envKeys.forEach(function(key) {
+   								var pluginName = tern.plugins[key] ? key : tern.optionalPlugins[key];
+   								if (pluginName && !tern.plugins[pluginName]) {
+   									var envnode = getEnvNode(key);
+   									if(envnode) {
+   										context.report(envnode, ProblemMessages['check-tern-plugin'], {0:key, 1:pluginName, data: pluginName});
+   									} else {
+       									context.report(node, ProblemMessages['check-tern-plugin'], {0:key, 1:pluginName, data: pluginName});
+   									}
+   								} else {
+   									var def = tern.getDef(key);
+   									if (!def && tern.optionalDefs[key]){
+   										envnode = getEnvNode(key);
+	   									if(envnode) {
+	   										context.report(envnode, ProblemMessages['check-tern-lib'], {0:key, 1:key, nls: 'check-tern-lib', data: key}); //$NON-NLS-1$
+	   									} else {
+	       									context.report(node, ProblemMessages['check-tern-lib'], {0:key, 1:key, nls: 'check-tern-lib', data: key}); //$NON-NLS-1$
+	   									}
+   									}
+   								}
+       						});
+        				}
+       				}
+   				}
+			}
+			return {
+				"Program": checkProject
+			};
+        },
+    	/** @callback */
+        "curly": function(context) {
+	        		/**
+	        		 * Checks the following AST element for a BlockStatement
+	        		 */
+	        		function checkBlock(node) {
         			    switch(node.type) {
         			        case 'IfStatement': {
             					if(node.consequent && node.consequent.type !== 'BlockStatement') {
             						//flag the first token of the statement that should be in the block
-            						context.report(node.consequent, "Statement should be enclosed in braces.", null /*, context.getTokens(node.consequent)[0]*/);
+            						context.report(node.consequent, ProblemMessages['curly'], null /*, context.getTokens(node.consequent)[0]*/);
             					}
             					if(node.alternate && node.alternate.type !== 'BlockStatement' && node.alternate.type !== 'IfStatement') {
             						//flag the first token of the statement that should be in the block
-            						context.report(node.alternate, "Statement should be enclosed in braces.", null /*, context.getTokens(node.alternate)[0]*/);
+            						context.report(node.alternate, ProblemMessages['curly'], null /*, context.getTokens(node.alternate)[0]*/);
             					}
             					break;
         				    }
         				    case 'DoWhileStatement':
         				    case 'WhileStatement':
         				    case 'WithStatement':
-        				    case 'ForStatement': 
-                            case 'ForInStatement': {
+        				    case 'ForStatement':
+                            case 'ForInStatement': 
+                            case 'ForOfStatement': {
             					if(node.body && node.body.type !== 'BlockStatement') {
             						//flag the first token of the statement that should be in the block
-            						context.report(node.body, "Statement should be enclosed in braces.", null /*, context.getTokens(node.body)[0]*/);
+            						context.report(node.body, ProblemMessages['curly'], null /*, context.getTokens(node.body)[0]*/);
             					}
             					break;
         					}
         				}
-        			}
-        			catch(ex) {
-        				Logger.log(ex);
-        			}
-        		}
-        		
-        		return {
-        			'IfStatement' : checkBlock,
-        			'WhileStatement' : checkBlock,
-        			'ForStatement' : checkBlock,
-        			'ForInStatement' : checkBlock,
-        			'WithStatement': checkBlock,
-        			'DoWhileStatement': checkBlock
-        		};
-        	}
+	        		}
+	
+	        		return {
+	        			'IfStatement' : checkBlock,
+	        			'WhileStatement' : checkBlock,
+	        			'ForStatement' : checkBlock,
+	        			'ForInStatement' : checkBlock,
+	        			'ForOfStatement': checkBlock,
+	        			'WithStatement': checkBlock,
+	        			'DoWhileStatement': checkBlock
+	        		};
         },
-		"eqeqeq": {
-		    description: 'Require the use of === and !==',
-		    rule: function(context) {
-		        function getOperatorToken(context, node) {
-            		var tokens = context.getTokens(node), len = tokens.length, operator = node.operator;
-            		for (var i=0; i < len; i++) {
-            			var t = tokens[i];
-            			if (t.value === operator) {
-            				return t;
-            			}
-            		}
-            		return null;
-            	}
-            	function isNullness(node) {
-            		if(node && node.type) {
-            			return (node.type === 'Literal' && node.value == null) || (node.type === 'Identifier' && node.name === 'undefined');  //$NON-NLS-0$  //$NON-NLS-1$  //$NON-NLS-2$
-            		}
-            		return false;
-            	}
-        		return {
-        			"BinaryExpression": function(node) {  //$NON-NLS-0$
-        				try {
+        /** @callback */
+		"eqeqeq": function(context) {
+			        /**
+        			 * @description Find the token with the matching operator
+        			 * @param {{}}} context The ESLint rule context
+        			 * @param {Object} node The AST node
+        			 * @returns {Object} The matching token or null
+        			 */
+        			function getOperatorToken(context, node) {
+	            		var tokens = context.getTokens(node),
+	            			len = tokens.length, 
+	            			operator = node.operator;
+	            		// node is a binary expression node so node.left exists
+	            		var start = node.left.end; // we need to start to look for the operator at the end of the left node
+	            		for (var i=0; i < len; i++) {
+	            			var t = tokens[i];
+	            			if (t.start >= start && t.value === operator) {
+	            				return t;
+	            			}
+	            		}
+	            		return null;
+	            	}
+	            	/**
+	            	 * @description If the given node value is null or undefined
+	            	 * @param {Object} node The AST node
+	            	 * @returns {Boolean} if the node's value is null or undefined
+	            	 */
+	            	function isNullness(node) {
+	            		if(node && node.type) {
+	            			return node.type === 'Literal' && node.value === null || node.type === 'Identifier' && node.name === 'undefined';
+	            		}
+	            		return false;
+	            	}
+	        		return {
+	        			/* @callback */
+	        			"BinaryExpression": function(node) {
         					if(isNullness(node.left) || isNullness(node.right)) {
         						return;
         					}
         					var op = node.operator;
         					var expected = null;
-        					if (op === "==") {  //$NON-NLS-0$
+        					if (op === "==") {
         					    expected = '===';
-        						context.report(node, "Expected '${0}' and instead saw '${1}'.", {0: expected, 1:op}, getOperatorToken(context, node));
-        					} else if (op === "!=") {  //$NON-NLS-0$
+        						context.report(node, ProblemMessages['eqeqeq'], {0: expected, 1:op}, getOperatorToken(context, node));
+        					} else if (op === "!=") {
         					    expected = '!==';
-        						context.report(node, "Expected '${0}' and instead saw '${1}'.", {0:expected, 1:op}, getOperatorToken(context, node));
+        						context.report(node, ProblemMessages['eqeqeq'], {0:expected, 1:op}, getOperatorToken(context, node));
         					}
-        				}
-        				catch(ex) {
-        					Logger.log(ex);
-        				}
-        			}
-        		};
-        	} 
+	        			}
+	        		};
         },
-		"missing-doc" : {
-		    description: 'Require JSDoc for all functions',
-		    rule: function(context) {
+        /** @callback */
+		"missing-doc": function(context) {
+                /**
+                 * @description If the comment is a block comment
+                 * @param {Array.<Object>} comments The array of AST comment nodes
+                 * @returns {Boolean} If the last comment is a block comment (this one that would be immediately preceeding the AST node)
+                 */
                 function validComment(comments) {
                     if(comments && comments.leading) {
                         var len = comments.leading.length;
@@ -122,141 +241,141 @@ define([
                     }
                     return false;
                 }
-        		function checkDoc(node) {
-        			try {
-        				var comments;
-        				var name;
-        				switch(node.type) {
-        					case 'Property':  //$NON-NLS-0$
-        						if(node.value && (node.value.type === 'FunctionExpression')) {  //$NON-NLS-0$  //$NON-NLS-1$
-        							comments = context.getComments(node);
-        							if(comments.leading.length < 1 && comments.trailing.length < 1) {
-        							    //TODO see https://github.com/jquery/esprima/issues/1071
-    							        comments = context.getComments(node.key);
-        							}
-        							if(!validComment(comments)) {
-        								switch(node.key.type) { 
-        									case 'Identifier':  //$NON-NLS-0$
-        										name = node.key.name;
-        										break;
-        									case 'Literal':  //$NON-NLS-0$
-        										name = node.key.value;
-        										break;
-        								}
-        								context.report(node.key, 'Missing documentation for function \'${0}\'.', {0:name}, { type: 'expr' });
-        							}
-        						}
-        						break;
-        					case 'FunctionDeclaration':  //$NON-NLS-0$
+        		/**
+		         * @description Checks the attached comments on the node
+		         * @param {Object} node The AST node
+		         */
+		        function checkDoc(node) {
+    				var comments;
+    				var name;
+    				switch(node.type) {
+    					case 'Property':
+    						if(node.value && node.value.type === 'FunctionExpression') {
     							comments = context.getComments(node);
-    							if(comments.leading.length < 1 && comments.trailing.length < 1) {
+    							if(!comments || comments.leading.length < 1) {
     							    //TODO see https://github.com/jquery/esprima/issues/1071
-							        comments = context.getComments(node.id);
+							        comments = context.getComments(node.key);
     							}
     							if(!validComment(comments)) {
-    								context.report(node.id, 'Missing documentation for function \'${0}\'.', {0:node.id.name}, { type: 'decl' });
+    								switch(node.key.type) {
+    									case 'Identifier':
+    										name = node.key.name;
+    										break;
+    									case 'Literal':
+    										name = node.key.value;
+    										break;
+    								}
+    								context.report(node.key, ProblemMessages['missing-doc'], {0:name}, { type: 'expr' }); //$NON-NLS-1$
     							}
-        						break;
-        					case 'ExpressionStatement':  //$NON-NLS-0$
-        						if(node.expression && node.expression.type === 'AssignmentExpression') {  //$NON-NLS-0$  //$NON-NLS-1$
-        							var anode = node.expression;
-        							if(anode.right && (anode.right.type === 'FunctionExpression') && anode.left && (anode.left.type === 'MemberExpression')) {  //$NON-NLS-0$  //$NON-NLS-1$
-        								//comments are attached to the enclosing expression statement
-        								comments = context.getComments(node);
-        								if(comments.leading.length < 1 && comments.trailing.length < 1) {
-            							    //TODO see https://github.com/jquery/esprima/issues/1071
-        							        comments = context.getComments(anode.left);
-            							}
-        								if(!validComment(comments)) {
-        									name = anode.left.computed === true ? anode.left.property.value : anode.left.property.name;
-        									context.report(anode.left.property, 'Missing documentation for function \'${0}\'.', {0:name}, { type: 'expr' });
-        								}
+    						}
+    						break;
+    					case 'FunctionDeclaration':
+							comments = context.getComments(node);
+							if(!comments || comments.leading.length < 1) {
+							    //TODO see https://github.com/jquery/esprima/issues/1071
+						        comments = context.getComments(node.id);
+							}
+							if(!validComment(comments) && node.parent && node.parent.type !== "ExportNamedDeclaration") {
+								context.report(node.id, ProblemMessages['missing-doc'], {0:node.id.name}, { type: 'decl' });  //$NON-NLS-1$
+							}
+    						break;
+    					case 'ExpressionStatement':
+    						if(node.expression && node.expression.type === 'AssignmentExpression') {
+    							var anode = node.expression;
+    							if(anode.right && anode.right.type === 'FunctionExpression' && anode.left && anode.left.type === 'MemberExpression') {
+    								//comments are attached to the enclosing expression statement
+    								comments = context.getComments(node);
+    								if(!comments || comments.leading.length < 1) {
+        							    //TODO see https://github.com/jquery/esprima/issues/1071
+    							        comments = context.getComments(anode.left);
         							}
-        						}
-        						break;
-        				}
-        			}
-        			catch(ex) {
-        				Logger.log(ex);
-        			}
+    								if(!validComment(comments)) {
+    									name = anode.left.computed === true ? anode.left.property.value : anode.left.property.name;
+    									context.report(anode.left.property, ProblemMessages['missing-doc'], {0:name}, { type: 'expr' }); //$NON-NLS-1$
+    								}
+    							}
+    						}
+    						break;
+    					case 'ExportNamedDeclaration' :
+							comments = context.getComments(node);
+							if(!validComment(comments) && node.declaration && node.declaration.type === "FunctionDeclaration") {
+								context.report(node.declaration.id, ProblemMessages['missing-doc'], {0:node.declaration.id.name}, { type: 'decl' });  //$NON-NLS-1$
+							}
+					}
         		}
-        		
+
         		return {
-        			"Property": checkDoc,  //$NON-NLS-0$
-        			"FunctionDeclaration": checkDoc,  //$NON-NLS-0$
-        			"ExpressionStatement": checkDoc  //$NON-NLS-0$
+        			"Property": checkDoc,
+        			"FunctionDeclaration": checkDoc,
+        			"ExpressionStatement": checkDoc,
+        			"ExportNamedDeclaration": checkDoc
         		};
-        	}
         },
-		"new-parens" : {
-		    description: 'Require parenthesis for constructors',
-		    rule: function(context) {
+        /** @callback */
+		"new-parens": function(context) {
         		return {
+        			/* @callback */
         			'NewExpression' : function(node) {
-        				try {
-        					if(node.callee) {
-        						var tokens = context.getTokens(node.callee, 0, 1);
-        						if(tokens && tokens.length > 0) {
-        							var last = tokens[tokens.length-1];
-        							if(last.type !== 'Punctuator' || last.value !== '(') {
-        								//if there s no opening parenthesis its safe to assume they are missing
-        								context.report(node.callee, 'Missing parentheses invoking constructor.', null, tokens[0]);
-        							}
-        						}
-        					}
-        				}
-        				catch(ex) {
-        					Logger.log(ex);
-        				}
+    					if(node.callee) {
+    						var tokens = context.getTokens(node.callee, 0, 1);
+    						if(tokens && tokens.length > 0) {
+    							var last = tokens[tokens.length-1];
+    							if(last.type !== 'Punctuator' || last.value !== '(') {
+    								//if there s no opening parenthesis its safe to assume they are missing
+    								context.report(node.callee, ProblemMessages['new-parens'], null, tokens[0]);
+    							}
+    						}
+    					}
         			}
         		};
-        	}
         },
-        "no-caller": {
-            description: "Warn on use of arguments.callee or arguments.caller",
-            rule: function(context) {
+        /** @callback */
+        "no-caller": function(context) {
                 return {
-                    "MemberExpression": function(node) { //$NON-NLS-0$
+                	/* @callback */
+                    "MemberExpression": function(node) {
                         var func = Finder.findParentFunction(node);
                         if(func) {
                             var object = node.object;
-                            if (!object || object.name !== "arguments" || object.type !== "Identifier") { //$NON-NLS-1$ //$NON-NLS-0$
+                            if (!object || object.name !== "arguments" || object.type !== "Identifier") {
                                 return;
                             }
                             var prop = node.property;
                             var name = prop.name ? prop.name : prop.value;
-                            if (name === "callee" || name === "caller") {//$NON-NLS-1$ //$NON-NLS-0$
-                                context.report(prop, "'arguments.${0}' is deprecated.", {0: name});
+                            if (name === "callee" || name === "caller") {
+                                context.report(prop, ProblemMessages['no-caller'], {0: name});
                             }
                         }
                     }
                 };
-            }
         },
-        "no-comma-dangle": {
-            description: 'Report extra trailing comma in object expressions',
-            rule: function(context) {
+        /** @callback */
+        "no-comma-dangle": function(context) {
                 return {
+                	/* @callback */
                     'ObjectExpression': function(node) {
                         var token  = context.getLastToken(node, 1);
                         if(token && token.value === ',') {
-                            context.report(node, 'Trailing commas in object expressions are discouraged.', null, token);
+                            context.report(node, ProblemMessages['no-comma-dangle'], null, token);
                         }
                     }
                 };
-            }
         },
-        "no-cond-assign": {
-            description: 'Disallow assignment statements in control statements like if-else, do-while, while and for statements',
-            rule: function(context) {
-                
+        /* @callback */
+        "no-cond-assign": function(context) {
+
                 var statements = {
                     'IfStatement': true,
                     'DoWhileStatement': true,
                     'WhileStatement': true,
                     'ForStatement': true
                 };
-                
+
+                /**
+                 * @description If the given node is surrounded by ()
+                 * @param {Object} node The AST node
+                 * @returns {Boolean} If the node is surrounded by ()
+                 */
                 function isParenthesised(node) {
                     var type = node.parent.type;
                     if(statements[type]) {
@@ -267,6 +386,11 @@ define([
                     }
                     return context.getTokenBefore(node).value === '(';
                 }
+                /**
+                 * @description If we should skip the node
+                 * @param {Object} node The AST node
+                 * @returns {Boolean} if we should skip checking the given node
+                 */
                 function skip(node) {
                     switch(node.type) {
                         case 'FunctionExpression':
@@ -278,6 +402,10 @@ define([
                         default: return false;
                     }
                 }
+                /**
+                 * @description Checks for assignment expressions
+                 * @param {Object} node The AST node
+                 */
                 function checkForAssignment(node) {
                     var assigns = [];
                     if(node.test === null) {
@@ -285,9 +413,10 @@ define([
                     }
                     node.test.parent = node;
                     Estraverse.traverse(node.test, {
+                    	/* @callback */
                         enter: function(n, parent) {
                             if(n.range[0] > node.test.range[1]) {
-                                //once we've left the test object 
+                                //once we've left the test object
                                 return Estraverse.VisitorOption.Break;
                             }
                             if(skip(n)) {
@@ -307,38 +436,35 @@ define([
                             var assign = assigns[i];
                             if(!isParenthesised(assign)) {
                                 assign.range[0] = assign.left.range[0]; //mark only from the start of first part
-                                context.report(assign, 'Expected a conditional expression and instead saw an assignment.');
+                                context.report(assign, ProblemMessages['no-cond-assign']);
                             }
                         }
                     }
                 }
-                
+
                 return {
                   'IfStatement': checkForAssignment,
                   'WhileStatement': checkForAssignment,
                   'ForStatement': checkForAssignment,
                   'DoWhileStatement': checkForAssignment
                 };
-            }
         },
-        "no-console": {
-            description: 'Disallow the use of \'console\' in browser-run code',
-            rule: function(context) {
+        /** @callback */
+        "no-console": function(context) {
                 return {
+                	/* @callback */
                     'MemberExpression': function(node) {
                         if(node.object.name === 'console') {
                             //are we using the browser env?
                             if(context.env && context.env['browser']) {
-                                context.report(node.object, 'Discouraged use of console in browser-based code.');
+                                context.report(node.object, ProblemMessages['no-console']);
                             }
                         }
                     }
                 };
-            }
         },
-        "no-constant-condition": {
-            description: 'Disallow use of a constant value as a conditional expression',
-            rule: function(context) {
+        /** @callback */
+        "no-constant-condition": function(context) {
                 /**
                  * @param {Object} node The AST node
                  * @returns {Boolean} If the given node has a 'truthy' constant value
@@ -347,11 +473,11 @@ define([
                     switch(node.type) {
                         case 'Literal':
                         case 'ObjectExpression':
-                        case 'FunctionExpression': 
+                        case 'FunctionExpression':
                         case 'ArrayExpression': {
                             return true;
                         }
-                        case 'BinaryExpression': 
+                        case 'BinaryExpression':
                         case 'LogicalExpression': {
                             return isConst(node.left) && isConst(node.right);
                         }
@@ -361,12 +487,16 @@ define([
                         default: return false;
                     }
                 }
+                /**
+                 * @description Check if the condition is a constant
+                 * @param {Object} node The AST node
+                 */
                 function checkCondition(node) {
                     if(node && node.test && isConst(node.test)) {
-                        context.report(node.test, 'Discouraged use of constant as a conditional expression.');                    
+                        context.report(node.test, ProblemMessages['no-constant-condition']);
                     }
                 }
-                
+
                 return {
                     'IfStatement': checkCondition,
                     'WhileStatement': checkCondition,
@@ -374,154 +504,106 @@ define([
                     'ForStatement': checkCondition,
                     'ConditionalExpression': checkCondition
                 };
-            }
         },
-		"no-debugger" : {
-		    description: 'Disallow use of the debugger keyword',
-		    rule: function(context) {
+        /** @callback */
+		"no-debugger": function(context) {
         		return {
+        			/* @callback */
         			"DebuggerStatement": function(node) {
-        				try {
-        					context.report(node, '\'debugger\' statement use is discouraged.', null, context.getTokens(node)[0]);
-        				}
-        				catch(ex) {
-        					Logger.log(ex);
-        				}
-        			}
+        				context.report(node, ProblemMessages['no-debugger'], null, context.getTokens(node)[0]);
+					}
         		};
-        	}
         },
-		"no-dupe-keys" : {
-		    description: 'Warn when object contains duplicate keys',
-		    rule: function(context) {
+        /** @callback */
+		"no-dupe-keys": function(context) {
         		return {
+        			/* @callback */
         			"ObjectExpression": function(node) {
-        				try {
-        					var props = node.properties;
-        					if(props && props.length > 0) {
-        						var len = props.length;
-        						var seen = Object.create(null);
-        						for(var i = 0; i < len; i++) {
-        							var prop = props[i];
-        							// Here we're concerned only with duplicate keys having kind == "init". Duplicates among other kinds (get, set)
-        							// cause syntax errors, by spec, so don't need to be linted.
-        							if(prop.kind !== "init") {
-        								continue;
-        							}
-        							var name = (prop.key.name ? prop.key.name : prop.key.value);
-        							if(Object.prototype.hasOwnProperty.call(seen, name)) {
-        								context.report(prop, 'Duplicate object key \'${0}\'.', {0:name}, context.getTokens(prop)[0]);
-        							}
-        							else {
-        								seen[name] = 1;
-        							}
-        						}
-        					}
-        				}
-        				catch(ex) {
-        					Logger.log(ex);
-        				}
+    					var props = node.properties;
+    					if(props && props.length > 0) {
+    						var len = props.length;
+    						var seen = Object.create(null);
+    						for(var i = 0; i < len; i++) {
+    							var prop = props[i];
+    							// Here we're concerned only with duplicate keys having kind == "init". Duplicates among other kinds (get, set)
+    							// cause syntax errors, by spec, so don't need to be linted.
+    							if(prop.kind !== "init") {
+    								continue;
+    							}
+    							var name = prop.key.name ? prop.key.name : prop.key.value;
+    							if(Object.prototype.hasOwnProperty.call(seen, name)) {
+    								context.report(prop, ProblemMessages['no-dupe-keys'], {0:name}, context.getTokens(prop)[0]);
+    							}
+    							else {
+    								seen[name] = 1;
+    							}
+    						}
+    					}
         			}
         		};
-        	}
         },
-		'no-empty-block' : {
-		    description: 'Warn when a code block is empty',
-		    rule: function(context) {
+        /** @callback */
+		'no-empty-block': function(context) {
         		var comments;
-        		
+
         		return {
+        			/* @callback */
         		    'Program' : function(node) {
-        		          comments = node.comments;  
+        		          comments = node.comments;
         		    },
+        		    /* @callback */
         			'BlockStatement' : function(node) {
-        			    try {
-            			    if(node.body.length < 1) {
-            			        for(var i = 0; i < comments.length; i++) {
-            			            var range = comments[i].range;
-            			            if(range[0] >= node.range[0] && range[1] <= node.range[1]) {
-            			                //a commented empty block, ignore
-            			                return;
-            			            }
-            			        }
-            			        context.report(node, 'Empty block should be removed or commented.');
-            			    }
-        			    }
-        			    catch(ex) {
-        			        Logger.log(ex);
+        			    if(node.body.length < 1) {
+        			        for(var i = 0; i < comments.length; i++) {
+        			            var range = comments[i].range;
+        			            if(range[0] >= node.range[0] && range[1] <= node.range[1]) {
+        			                //a commented empty block, ignore
+        			                return;
+        			            }
+        			        }
+        			        context.report(node, ProblemMessages['no-empty-block']);
         			    }
         			}
         		};
-        	}
         },
-		"no-eval" : {
-		    description: 'Disallow use of eval function',
-		    rule: function(context) {
+        /** @callback */
+		"no-eval": function(context) {
         		return {
+        			/* @callback */
         			"CallExpression": function(node) {
-        				try {
-        					var name = node.callee.name;
-        					if(!name) {
-        						return;
-        					}
-        					if('eval' === name) {
-        						context.report(node.callee, "${0} function calls are discouraged.", {0:'\'eval\''}, context.getTokens(node.callee)[0]);
-        					}
-        					else if('setInterval' === name || 'setTimeout' === name) {
-        						if(node.arguments.length > 0) {
-        							var arg = node.arguments[0];
-        							if(arg.type === 'Literal') {
-        								context.report(node.callee, "${0} function calls are discouraged.", {0:'Implicit \'eval\''}, context.getTokens(node.callee)[0]);
-        							}
-        							else if(arg.type === 'Identifier') {
-        								//lets see if we can find it definition
-        								var scope = context.getScope();
-        								var decl = util.getDeclaration(arg, scope);
-        								if (decl && decl.defs && decl.defs.length) {
-        									var def = decl.defs[0];
-        									var dnode = def.node;
-        									if(def.type === 'Variable' && dnode && dnode.type === 'VariableDeclarator' &&
-        										dnode.init && dnode.init.type === 'Literal') {
-        										context.report(node.callee, "${0} function calls are discouraged.", {0:'Implicit \'eval\''}, context.getTokens(node.callee)[0]);
-        									}
-        								}
-        							}
-        						}
-        					}
-        				}
-        				catch(ex) {
-        					Logger.log(ex);
-        				}
+     					var name = node.callee.name;
+    					if(!name) {
+    						return;
+    					}
+    					if('eval' === name) {
+    						context.report(node.callee, ProblemMessages['no-eval'], {0:'\'eval\''}, context.getTokens(node.callee)[0]); //$NON-NLS-1$
+    					}
         			}
         		};
-        	}
         },
-		"no-extra-semi": {
-		    description: 'Warn about extraneous semi colons',
-		    rule: function(context) {
+        /** @callback */
+		"no-extra-semi": function(context) {
         		return {
-        			"EmptyStatement": function(node) {  //$NON-NLS-0$
-        				try {
-        					var tokens = context.getTokens(node);
-        					var t = tokens[tokens.length - 1];
-        					if (t && t.type === "Punctuator" && t.value === ";") {  //$NON-NLS-0$  //$NON-NLS-1$
-        						context.report(node, "Unnecessary semicolon.", null, t /* expose the bad token */);
-        					}
-        				}
-        				catch(ex) {
-        					Logger.log(ex);
-        				}
+        			/* @callback */
+        			"EmptyStatement": function(node) {
+    					var tokens = context.getTokens(node);
+    					var t = tokens[tokens.length - 1];
+    					if (t && t.type === "Punctuator" && t.value === ";") {
+    						context.report(node, ProblemMessages['no-extra-semi'], null, t /* expose the bad token */);
+    					}
         			}
         		};
-        	}
         },
-		'no-fallthrough' : {
-		    description: 'Warn when a switch case falls through',
-		    rule: function(context) {
-        		function fallsthrough(node) {
+        /** @callback */
+		'no-fallthrough': function(context) {
+        		/**
+		         * @description Check if the AST node falls through
+		         * @param {Object} node The AST node
+		         */
+		        function fallsthrough(node) {
         		    // cases with no statements or only a single case are implicitly fall-through
         		    if(node.consequent) {
-        		        var statements = node.consequent;
+        		        var statements = node.consequent.slice(0);
         		        if(statements.length > 0 && statements[0].type === 'BlockStatement') {
         		            var stmts = statements.shift(); //take the block statement off the list, it is not returnable
         		            if(stmts.body.length > 0) {
@@ -542,270 +624,516 @@ define([
         		    }
         		    return false;
         		}
-        		
+
         		return {
+        			/* @callback */
         			'SwitchStatement' : function(node) {
-        			    try {
-            			    if(node.cases && node.cases.length > 1) {
-            			        //single case is implicitly fallthrough
-            			        var caselen  = node.cases.length;
-            			       cases: for(var i = 0; i < caselen; i++) {
-            			            if(i+1 === caselen) {
-            			                //last node is implicitly fall-through
-            			                break;
-            			            }
-            			            if(fallsthrough(node.cases[i])) {
-            			                //corect the highlighting to match eclipse
-            			                var reportednode = node.cases[i+1];
-            			                if(reportednode.test) {
-            			                    reportednode.range[1] = reportednode.test.range[1];
-            			                } else {
-            			                    //default case - tag the token
-            			                    var tokens = context.getTokens(reportednode);
-            			                    if(tokens && tokens.length > 0) {
-            			                        reportednode.range[1] = tokens[0].range[1];
-            			                    }
-            			                }
-            			                var comments = reportednode.leadingComments;
-            			                if(!comments && reportednode.test) {
-            			                    //TODO see https://github.com/jquery/esprima/issues/1071
-            			                    comments = reportednode.test.leadingComments; 
-            			                }
-            			                if(comments) {
-                        		            var comment = null;
-                        		            for(var c = 0; c < comments.length; c++) {
-                        		                comment = comments[c];
-                        		                if(/\s*\$FALLTHROUGH\$\s*/.test(comment.value)) {
-                        		                    continue cases;
-                        		                }
-                        		            }
-                        		        }
-            			                context.report(reportednode, 'Switch case may be entered by falling through the previous case.');
-            			            }
-            			        }
-            			    }
-        			    }
-        			    catch(ex) {
-        			        Logger.log(ex);
+        			    if(node.cases && node.cases.length > 1) {
+        			        //single case is implicitly fallthrough
+        			        var caselen  = node.cases.length;
+        			       cases: for(var i = 0; i < caselen; i++) {
+        			            if(i+1 === caselen) {
+        			                //last node is implicitly fall-through
+        			                break;
+        			            }
+        			            if(fallsthrough(node.cases[i])) {
+        			                //corect the highlighting to match eclipse
+        			                var reportednode = node.cases[i+1];
+        			                if(reportednode.test) {
+        			                    reportednode.range[1] = reportednode.test.range[1];
+        			                } else {
+        			                    //default case - tag the token
+        			                    var tokens = context.getTokens(reportednode);
+        			                    if(tokens && tokens.length > 0) {
+        			                        reportednode.range[1] = tokens[0].range[1];
+        			                    }
+        			                }
+        			                var comments = reportednode.leadingComments;
+        			                if(!comments && reportednode.test) {
+        			                    //TODO see https://github.com/jquery/esprima/issues/1071
+        			                    comments = reportednode.test.leadingComments;
+        			                }
+        			                if(comments) {
+                    		            var comment = null;
+                    		            for(var c = 0; c < comments.length; c++) {
+                    		                comment = comments[c];
+                    		                if(/\$?falls?\s?through\$?/i.test(comment.value.toLowerCase())) {
+                    		                    continue cases;
+                    		                }
+                    		            }
+                    		        }
+        			                context.report(reportednode, ProblemMessages['no-fallthrough']);
+        			            }
+        			        }
         			    }
         			 }
         		};
-        	}
         },
-        "no-iterator": {
-            description: "Warn when the __iterator__ property is used",
-            rule: function(context) {
+        /** @callback */
+        "no-implied-eval": function(context) {
+        		return {
+        			/* @callback */
+        			"CallExpression": function(node) {
+    					var name = node.callee.name;
+    					if(!name) {
+    						return;
+    					}
+    					if('setInterval' === name || 'setTimeout' === name) {
+    						if(node.arguments.length > 0) {
+    							var arg = node.arguments[0];
+    							if(arg.type === 'Literal') {
+    								context.report(node.callee, ProblemMessages['no-eval'], {0:'Implicit \'eval\''}, context.getTokens(node.callee)[0]); //$NON-NLS-1$
+    							}
+    							else if(arg.type === 'Identifier') {
+    								//lets see if we can find it's definition
+    								var scope = context.getScope();
+    								var decl = util.getDeclaration(arg, scope);
+    								if (decl && decl.defs && decl.defs.length) {
+    									var def = decl.defs[0];
+    									var dnode = def.node;
+    									if(def.type === 'Variable' && dnode && dnode.type === 'VariableDeclarator' &&
+    											dnode.init && dnode.init.type === 'Literal') {
+    										context.report(node.callee, ProblemMessages['no-eval'], {0:'Implicit \'eval\''}, context.getTokens(node.callee)[0]); //$NON-NLS-1$
+    									}
+    								}
+    							}
+    						}
+    					}
+        			}
+        		};
+        },
+        /** @callback */
+        "no-iterator": function(context) {
                 return {
+                	/* @callback */
                     'MemberExpression': function(node) {
-                        if(node.property != null) {
+                        if(node.property !== null) {
                             if(node.computed) {
                                 if(node.property.value === '__iterator__') {
-                                    context.report(node.property, 'Discouraged __iterator__ property use.');
+                                    context.report(node.property, ProblemMessages['no-iterator']);
                                 }
                             } else if(node.property.name === '__iterator__') {
-                                context.report(node.property, 'Discouraged __iterator__ property use.');    
+                                context.report(node.property, ProblemMessages['no-iterator']);
                             }
                         }
                     }
                 };
-            }
         },
-		'no-jslint': {
-		    description: 'Warn when the jslint/jshint directive is used',
-		    rule: function(context) {
+        /** @callback */
+        "no-proto": function(context) {
+                return {
+                	/* @callback */
+                    'MemberExpression': function(node) {
+                        if(node.property !== null) {
+                            if(node.computed) {
+                                if(node.property.value === '__proto__') {
+                                    context.report(node.property, ProblemMessages['no-proto']);
+                                }
+                            } else if(node.property.name === '__proto__') {
+                                context.report(node.property, ProblemMessages['no-proto']);
+                            }
+                        }
+                    }
+                };
+        },
+        /** @callback */
+		'no-jslint': function(context) {
         		return {
+        			/* @callback */
         			'Program' : function(node) {
-        			    try {
-            			    var comments = node.comments;
-            			    var len;
-            			    if(comments && (len = comments.length) && comments.length > 0) {
-            			        for(var i = 0; i < len; i++) {
-            			            var comment = comments[i];
-            			            if(comment.type === 'Block') {
-            			                var match = /^\s*(js[l|h]int)(\s+\w+:\w+)+/ig.exec(comment.value);
-            			                if(match) {
-            			                    var jslint = match[1];
-            			                    if(jslint.length < 1) {
-            			                        continue;
-            			                    }
-            			                    var start = 2 + comment.value.indexOf(jslint) + comment.range[0];
-            			                    var end = start + jslint.length;
-            			                    context.report({type:'BlockComment', range:[start, end], loc: comment.loc}, 'The \'${0}\' directive is unsupported, please use eslint-env.', {0:jslint});
-            			                }
-            			            }
-            			        }
-            			    }
-        			    }
-        			    catch(ex) {
-        			        Logger.log(ex);
+        			    var comments = node.comments;
+        			    var len;
+        			    if(comments && (len = comments.length) && comments.length > 0) {
+        			        for(var i = 0; i < len; i++) {
+        			            var comment = comments[i];
+        			            if(comment.type === 'Block') {
+        			                var match = /^\s*(js[l|h]int)(\s+\w+:\w+)+/ig.exec(comment.value);
+        			                if(match) {
+        			                    var jslint = match[1];
+        			                    if(jslint.length < 1) {
+        			                        continue;
+        			                    }
+        			                    var start = 2 + comment.value.indexOf(jslint) + comment.range[0]; 
+        			                    var end = start + jslint.length;
+        			                    context.report({type:'BlockComment', range:[start, end], loc: comment.loc}, ProblemMessages['no-jslint'], {0:jslint}); //$NON-NLS-1$
+        			                }
+        			            }
+        			        }
         			    }
         			 }
         		};
-        	}
         },
-		"no-new-array": {
-		    description: 'Disallow use of the Array constructor',
-		    rule: function(context) {
-        		return util.createNewBuiltinRule("Array", "Use the array literal notation '[]'.", context); //$NON-NLS-0$
-        	}
+        /** @callback */
+		"no-new-array": function(context) {
+		    	/**
+	    		 * @description Check the given AST node for new Array(..) violations
+	    		 * @param {Object} node The AST node
+	    		 */
+	    		function checkNode(node) {
+		    		var callee = node.callee;
+	    			if (callee && callee.name === 'Array') {
+						var args = node.arguments;
+						if(args.length > 1) {
+							context.report(callee, ProblemMessages['no-new-array']);
+						} else if(args.length === 1 && (args[0].type === 'Literal' && typeof args[0].value !== 'number')) {
+							context.report(callee, ProblemMessages['no-new-array']);
+						}
+					}
+		    	}
+        		return {
+        			'NewExpression': checkNode,
+        			'CallExpression': checkNode
+        		};
         },
-		"no-new-func": {
-		    description: 'Disallow use of the Function constructor',
-		    rule: function(context) {
-        		return util.createNewBuiltinRule("Function", "The Function constructor is eval.", context);
-        	}
+        /** @callback */
+		"no-new-func": function(context) {
+        		return {
+        			/* @callback */
+        			'NewExpression': function(node) {
+        				var callee = node.callee;
+		    			if (callee && callee.name === 'Function') {
+		    				context.report(callee, ProblemMessages['no-new-func']);
+	    				}
+        			}
+        		};
         },
-		"no-new-object": {
-		    description: 'Disallow use of the Object constructor',
-		    rule: function(context) {
-        		return util.createNewBuiltinRule("Object", "Use the object literal notation '{}' or Object.create(null).", context); //$NON-NLS-0$
-        	}
+        /** @callback */
+		"no-new-object": function(context) {
+		   		return {
+		   			/* @callback */
+        			'NewExpression': function(node) {
+        				var callee = node.callee;
+		    			if (callee && callee.name === 'Object') {
+		    				context.report(callee, ProblemMessages['no-new-object']);
+	    				}
+        			}
+        		};
         },
-		"no-new-wrappers": {
-		    description: 'Disallow creating new String, Number or Boolean via their constructor',
-		    rule: function(context) {
-        		var wrappers = ["String", "Number", "Math", "Boolean", "JSON"]; //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$
-        
-        		return util.createNewBuiltinRule(wrappers, function(context, node, symbol) {
-        			context.report(node, "Do not use '${0}' as a constructor.", [symbol]); //$NON-NLS-1$
-        		}, context);
-        	}
+        /** @callback */
+		"no-new-wrappers": function(context) {
+        		var wrappers = ["String", "Number", "Math", "Boolean", "JSON"]; //$NON-NLS-4$ //$NON-NLS-3$ //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-0$ //$NON-NLS-5$
+				return {
+					/* @callback */
+        			'NewExpression': function(node) {
+        				var callee = node.callee;
+		    			if (callee && wrappers.indexOf(callee.name) > -1) {
+		    				context.report(callee, ProblemMessages['no-new-wrappers'], [callee.name]);
+	    				}
+        			}
+        		};
         },
-        "missing-nls": {
-        	description: 'Disallow non-externalized string literals',
-        	rule: function(context){
-        		function reportNonNLS(node, index){
+        /** @callback */
+        "no-with": function(context) {
+        		return {
+        			/* @callback */
+        			'WithStatement': function(node) {
+	        			context.report(node, ProblemMessages['no-with'], null, context.getFirstToken(node));
+	        		}
+        		};
+        },
+        /** @callback */
+		"missing-nls": function(context){
+        		/**
+		         * @description Reports missing NLS on the given node and offset
+		         * @param {Object} node The AST node
+		         * @param {Number} index The NLS index to use
+		         */
+		        function reportMissingNLS(node, index){
         			var data = Object.create(null);
         			data.indexOnLine = index;
-        			context.report(node, "Non-externalized string literal \'${0}\'.", {0:node.value, data: data});
+        			context.report(node, ProblemMessages['missing-nls'], {0:node.value, data: data});
         		}
         		
         		return {
+        			/* @callback */
                     'Literal': function(node) {
-        				// Create a map of line numbers to a list of literal nodes
-                    	if (typeof node.value === 'string' && node.value.length > 0){
-                    		if (node.value.toLowerCase() === 'use strict'){
-                    			return;
-                    		}
-                    		if (node.parent){
-	                    		if (node.parent.type === 'UnaryExpression' || node.parent.type === 'BinaryExpression' || node.parent.type === 'MemberExpression'){
-	                    			return;
-	                    		}
-	                    		if (node.parent.type === 'Property' && node.parent.key === node){
-	                    			return;
-	                    		}
-	                    		if (node.parent.type === 'CallExpression' && node.parent.callee && node.parent.callee.name === 'require'){
-	                    			return;
-	                    		}
-                    			// Don't consider strings in the define statement
-                    			if (node.parent.parent && node.parent.parent.type === 'CallExpression' && node.parent.parent.callee && node.parent.parent.callee.name === 'define'){
-	                    			return;
-	                    		}
-                    		}
-                    		lineNum = node.loc.end.line-1;
-                    		if (!context._linesWithStringLiterals[lineNum]){
-                    			context._linesWithStringLiterals[lineNum] = [];
-                    		}
-                    		context._linesWithStringLiterals[lineNum].push(node);
-                    	}
+                    	_collectLinesWithStringLiterals(node, context._linesWithStringLiterals);
                     },
+                    /**
+                     * @callback
+                     */
                     'Program': function(node){
-                    	context._linesWithStringLiterals = {};
+                    	context._linesWithStringLiterals = Object.create(null);
+                    	context._isMissingNLSActive = true;
                     },
+                    /**
+                     * @callback
+                     */
                     'Program:exit': function(node){
+                    	context._isMissingNLSActive = false;
                     	// Read each line in the map and check if there are non-nls statements
                     	if (context._linesWithStringLiterals){
-                    		for (var lineNumber in context._linesWithStringLiterals) {
-							    if (context._linesWithStringLiterals.hasOwnProperty(lineNumber)) {
-							        var line = context.getSourceLines()[lineNumber];
-							        var nodes = context._linesWithStringLiterals[lineNumber];
-							        
-							        if (nodes){
-								        var nonNlsRegExp = /\/\/\$NON-NLS-([0-9])+\$/g;
-								        var match;
-								        var comments = [];
-								        while ((match = nonNlsRegExp.exec(line)) != null){
+                    		
+                    		var comments = node.comments;
+	                    	var linesWithComments = {};
+	                    	if (Array.isArray(comments)){
+	                    		for (var f=0; f<comments.length; f++) {
+	                    			var comment = comments[f];
+	                    			if (comment.type.toLowerCase() === 'line'){
+	                    				var lineNumber = comment.loc.end.line;
+								        linesWithComments[lineNumber] = "//" + comment.value; // Add in leading // to simply regex //$NON-NLS-1$
+	                    			}
+	                    		}
+	                    	}
+                    		
+                    		for (lineNumber in context._linesWithStringLiterals) {
+                    			var nodes = context._linesWithStringLiterals[lineNumber];
+							    if (nodes) {
+							    	
+							    	// 0 based line count
+									comment = linesWithComments[lineNumber];
+							        var nonNlsRegExp = /\/\/\$NON-NLS-([0-9])+\$/g;
+							        var match;
+							        comments = [];
+							    	if (comment){
+								        while ((match = nonNlsRegExp.exec(comment)) !== null){
 								        	comments.push(match[1]);
 								        }
-								        
-								        for (var i=0; i<nodes.length; i++) {
-								        	var match = false;
-								        	for (var j=0; j<comments.length; j++) {
-								        		
-								        		// NON-NLS comments start at 1
-								        		if (comments[j] === (""+(i+1))){
-								        			match = true;
-								        			break;
-								        		}
-								        		// For now allow NON-NLS-0 comments
-								        		if (i===0 && comments[j] === '0'){
-								        			match = true;
-								        			break;
-								        		}
-								        	}
-								        	if (!match){
-								        		reportNonNLS(nodes[i], i);
-								        	}
-								        }
-								    }
-								    
-								    // TODO Report unused non-nls comments
+							        }
+
+							        for (var i=0; i<nodes.length; i++) {
+							        	match = false;
+							        	for (var j=0; j<comments.length; j++) {
+
+							        		// NON-NLS comments start at 1
+							        		if (comments[j] === String(i+1)){
+							        			comments[j] = null;
+							        			match = true;
+							        			break;
+							        		}
+							        		// For now allow NON-NLS-0 comments
+							        		if (i===0 && comments[j] === '0'){
+							        			comments[j] = null;
+							        			match = true;
+							        			break;
+							        		}
+							        	}
+							        	if (!match){
+							        		reportMissingNLS(nodes[i], i);
+							        	}
+							        }
 							    }
 							}
                     	}
                     }
 				};
-        	}
         },
-		"no-redeclare": {
-		    description: 'Warn when variable or function is redeclared',
-		    rule: function(context) {
-                function reportRedeclaration(node, name) {
-                    context.report(node, "'${0}' is already defined.", {0:name});
-                }
+        /** @callback */
+        "unnecessary-nls": function(context){
+        		/**
+		         * @name reportUnusedNLS
+		         * @description Reports unnecessary NLS problem, you must set both the range (index array) and the loc {start/end line/col} on the location argument
+		         * @param location
+		         * @param value
+		         * @param nlsCommentValue
+		         */
+		        function reportUnusedNLS(location, value, nlsCommentValue){
+					context.report({range: location.range, loc: location.loc, value: value}, ProblemMessages['unnecessary-nls'], {data: {nlsComment: nlsCommentValue}});
+        		}
 
-                function checkScope(node) {
-                    try {
-                        var scope = context.getScope();
-                        if(node.type === "FunctionExpression" && node.id && node.id.name) {
-                            scope  = scope.upper;
-                        }
-                        scope.variables.forEach(function(variable) {
-                            // If variable has multiple defs, every one after the 1st is a redeclaration
-                            variable.defs.slice(1).forEach(function(def) {
-                                reportRedeclaration(def.name, def.name.name);
-                            });
-                        });
-                    }
-                    catch(ex) {
-                        Logger.log(ex);
-                    }
-                }
+        		return {
+        			/* @callback */
+                    'Literal': function(node) {
+                    	if (!context._isMissingNLSActive){
+                    		_collectLinesWithStringLiterals(node, context._linesWithStringLiterals);
+                    	}
+                    },
+                    /**
+                     * @callback
+                     */
+                    'Program': function(node){
+                    	if (!context._isMissingNLSActive){
+                    		context._linesWithStringLiterals = Object.create(null);
+                		}
+                    },
+                    /**
+                     * @callback
+                     */
+                    'Program:exit': function(node){
+                    	var start, value, lineNumber, match, nlsComments;
+                    	var comments = node.comments;
+                    	var linesWithComments = {};
+                    	if (Array.isArray(comments)){
+                    		for (var f=0; f<comments.length; f++) {
+                    			var comment = comments[f];
+                    			if (comment.type.toLowerCase() === 'line'){
+                    				lineNumber = comment.loc.end.line;
+							        linesWithComments[lineNumber] = comment;
+                    			}
+                    		}
+                    	}
+                    	
+                    	// NLS tag must start with // (or be start of line comment) and can be numbered 0 to 9
+                    	var nonNlsRegExp = /(?:^|(\/\/))\$NON-NLS-([0-9])+\$/g;
 
-                return {
-                    "Program": checkScope,  //$NON-NLS-0$
-                    "FunctionDeclaration": checkScope,  //$NON-NLS-0$
-                    "FunctionExpression": checkScope,  //$NON-NLS-0$
-                    "ArrowFunctionExpression": checkScope //$NON-NLS-0$
-                };
-        	}
+                    	// Read each line in the map and check if there are non-nls statements
+                    	if (context._linesWithStringLiterals){
+                    		for (lineNumber in context._linesWithStringLiterals) {
+                    			var nodes = context._linesWithStringLiterals[lineNumber];
+							    if (nodes) {
+							    	comment = linesWithComments[lineNumber];
+							    	delete linesWithComments[lineNumber];
+								    nlsComments = [];
+							        if (comment) {
+								        while ((match = nonNlsRegExp.exec(comment.value)) !== null){
+								        	nlsComments.push(match);
+								        }
+						        	}
+									for (var j=0; j<nlsComments.length; j++) {
+										match = nlsComments[j];
+							        	var hasMatch = false;
+							        	for (var i=0; i<nodes.length; i++) {
+							        		// NON-NLS comments start at 1
+							        		if (match[2] === String(i+1)){
+							        			hasMatch = true;
+							        			break;
+							        		}
+							        		// For now allow NON-NLS-0 comments
+							        		if (i===0 && match[2] === '0'){
+							        			hasMatch = true;
+							        			break;
+							        		}
+							        	}
+							        	if (!hasMatch){
+							        		value = match[1] ? match[0] : '//' + match[0]; //$NON-NLS-1$
+											start = comment.range[0] + match.index;
+											if (match[1]){
+												start += 2; // Comment range doesn't include line comment prefix
+											}
+                    						reportUnusedNLS({range: [start, start+value.length], loc: comment.loc}, value, match[0]);	        		
+							        	}
+							        }
+							    }
+							}
+                    	}
+                    	
+                    	// Find comments on lines with no string literals
+                    	for (lineNumber in linesWithComments){
+                    		comment = linesWithComments[lineNumber];
+                    		if (comment){
+                    			// See if there is any code on the line before the comment
+                    			var index = comment.range[0]-1;
+                    			var text = node.sourceFile.text;
+                    			var isBlank = index < 0;  //If we happen to be at the start of the file treat as newline
+                    			var prevChar;
+                    			if (text){
+	                    			while (index >= 0 && (prevChar = text.charAt(index)).match(/\s/)){
+	                    				if (prevChar === '\n' || index === 0){
+	                    					isBlank = true;
+	                    					break;
+	                    				}
+	                    				index--;
+	                    			}
+                				}
+                    			while ((match = nonNlsRegExp.exec(comment.value)) !== null){
+                    				if (isBlank && match.index > 0){
+                    					break; // We are on a commented out line of code, skip marking non-nls messages
+                    				}
+                    				value = match[1] ? match[0] : '//' + match[0]; //$NON-NLS-1$
+									start = comment.range[0] + match.index;
+									if (match[1]){
+										start += 2; // Comment range doesn't include line comment prefix
+									}
+            						reportUnusedNLS({range: [start, start+value.length], loc: comment.loc}, value, match[0]);	
+            					}
+                			}
+                    	}
+                    }
+				};
         },
-        "no-regex-spaces": {
-            description: "Warn when multiple spaces are used in regular expressions",
-            rule: function(context) {
-                
+        /** @callback */
+		"no-redeclare": function(context) {
+			var options = {
+				builtinGlobals: Boolean(context.options[0] && context.options[0].builtinGlobals)
+			};
+
+			/**
+			 * Find variables in a given scope and flag redeclared ones.
+			 * @param {Scope} scope - An escope scope object.
+			 * @returns {void}
+			 * @private
+			 */
+			function findVariablesInScope(scope) {
+				scope.variables.forEach(function(variable) {
+					var hasBuiltin = options.builtinGlobals && "writeable" in variable;
+					var count = (hasBuiltin ? 1 : 0) + variable.identifiers.length;
+
+					if (count >= 2) {
+						variable.identifiers.sort(function(a, b) {
+							return a.range[1] - b.range[1];
+						});
+
+						for (var i = hasBuiltin ? 0 : 1, l = variable.identifiers.length; i < l; i++) {
+							context.report(
+								variable.identifiers[i],
+								ProblemMessages['no-redeclare'], {0:variable.name});
+						}
+					}
+				});
+
+			}
+
+			/**
+			 * Find variables in the current scope.
+			 * @param {ASTNode} node - The Program node.
+			 * @returns {void}
+			 * @private
+			 */
+			function checkForGlobal(node) {
+				var scope = context.getScope(),
+					parserOptions = context.parserOptions,
+					ecmaFeatures = parserOptions.ecmaFeatures || {};
+
+				// Nodejs env or modules has a special scope.
+				if (ecmaFeatures.globalReturn || node.sourceType === "module") {
+					findVariablesInScope(scope.childScopes[0]);
+				} else {
+					findVariablesInScope(scope);
+				}
+			}
+
+			/**
+			 * Find variables in the current scope.
+			 * @returns {void}
+			 * @private
+			 */
+			function checkForBlock() {
+				findVariablesInScope(context.getScope());
+			}
+
+			if (context.parserOptions.ecmaVersion >= 6) {
+				return {
+					Program: checkForGlobal,
+					BlockStatement: checkForBlock,
+					SwitchStatement: checkForBlock
+				};
+			}
+			return {
+				Program: checkForGlobal,
+				FunctionDeclaration: checkForBlock,
+				FunctionExpression: checkForBlock,
+				ArrowFunctionExpression: checkForBlock
+			};
+		},
+        /** @callback */
+        "no-regex-spaces": function(context) {
+                /**
+                 * @description Reports spaces used in the regex node
+                 * @param {Object} node The AST node
+                 */
                 function reportSpaces(node) {
                     var regex = /( {2,})/g;
                     var val = null;
-                    while((val = regex.exec(node.raw)) != null) {
+                    while((val = regex.exec(node.raw)) !== null) {
                         var start = node.range[0]+val.index;
                         var len = val[0].length;
-                        context.report({type: 'Literal', range:[start, start+len], loc: node.loc}, 
-                                        'Avoid multiple spaces in regular expressions. Use \' {${0}}\' instead.', {0:len});
+                        context.report({type: 'Literal', range:[start, start+len], loc: node.loc}, //$NON-NLS-1$
+                                        ProblemMessages['no-regex-spaces'], {0:len});
                     }
                 }
-                
+
                 return {
+                	/* @callback */
                     'Literal': function(node) {
                         if(node.parent && node.parent.type === 'NewExpression') {
                             if(node.parent.callee.name === 'RegExp') {
@@ -816,44 +1144,52 @@ define([
                         if(tok && tok.type === 'RegularExpression') {
                             reportSpaces(node);
                         }
-                    }  
+                    }
                 };
-            }
         },
-        "no-reserved-keys": {
-            description: "Warn when a reserved word is used as a property key",
-            rule: function(context) {
+        /** @callback */
+        "no-reserved-keys": function(context) {
                 return {
+                	/* @callback */
                     'ObjectExpression': function(node) {
                         if(node.properties) {
                             for(var i = 0; i < node.properties.length; i++) {
                                 var prop = node.properties[i];
-                                if(prop.key.type === 'Identifier' && JsSyntax.keywords.indexOf(prop.key.name) > -1) {
-                                    context.report(prop.key, 'Reserved words should not be used as property keys.');
+                                if(prop.key.type === 'Identifier' && JsSyntax.keywords.indexOf(prop.key.name) > -1) {//$NON-NLS-1$
+                                    context.report(prop.key, ProblemMessages['no-reserved-keys']);//$NON-NLS-1$
                                 }
                             }
                         }
+                    },
+                    "MemberExpression" : function(node) {
+                    	if (node.property) {
+                            if(node.property.type === 'Identifier' && JsSyntax.keywords.indexOf(node.property.name) > -1) {//$NON-NLS-1$
+                                context.report(node.property, ProblemMessages['no-reserved-keys']);//$NON-NLS-1$
+                            }
+                    	}
                     }
                 };
-            }
         },
-        "no-shadow": {
-            description: "Warn when shadowing variable from upper scope",
-            rule: function(context) {
-                var hasOwnProperty = Object.prototype.hasOwnProperty;
+        /** @callback */
+        "no-shadow": function(context) {
+                /**
+                 * @description Collect all vars from the given scope into the map
+                 * @param {Object} map The collector map
+                 * @param {Object} scope The backing EScope scope
+                 */
                 function addVariables(map, scope) {
                     scope.variables.forEach(function(variable) {
                         var name = variable.name;
                         if (!variable.defs.length) { // Ignore the synthetic 'arguments' variable
                             return;
-                        } if (!hasOwnProperty.call(map, name)) {
+                        } if (!Object.prototype.hasOwnProperty.call(map, name)) {
                             map[variable.name] = scope;
                         }
                     });
                 }
 
                 /**
-                 * @returns {Object} A map of {String} -> {Scope}. Keys are symbol names, values are the 
+                 * @returns {Object} A map of {String} -> {Scope}. Keys are symbol names, values are the
                  * uppermost scope that binds the name.
                  */
                 function createSymbolMap(scope) {
@@ -872,133 +1208,169 @@ define([
                     scope._symbols = symbols;
                     return symbols;
                 }
-
-                function reportShadow(node, name) {
-                    context.report(node, "'${0}' is already declared in the upper scope.", {0: name});
-                }
-
+                /**
+                 * @description Check if any of the variable defs are of type Parameter
+                 * @param {Object} variable The variable
+                 * @returns {Boolean} if the any of the defs are of type Parameter
+                 */
                 function isParameter(variable) {
                     return variable.defs.some(function(def) {
-                        return def.type === "Parameter";  //$NON-NLS-0$
+                        return def.type === "Parameter";
                     });
                 }
-
+                /**
+                 * @description Check the scope the encloses the given AST node
+                 * @param {Object} node The AST node
+                 */
                 function checkScope(node) {
-                    try {
-                        // Build map
-                        var scope = context.getScope();
-                        if (node.type === "FunctionExpression" && node.id && node.id.name) {
-                            scope  = scope.upper;
-                        }
-                        var symbolMap = createSymbolMap(scope);
-
-                        if (scope.type === "global") {//$NON-NLS-0$
+                    // Build map
+                    var scope = context.getScope();
+                    if (node.type === "FunctionExpression" && node.id && node.id.name) {
+                        scope  = scope.upper;
+                        if (scope.type === "global") {
                             return; // No shadowing can occur in the global (Program) scope
                         }
-                        scope.variables.forEach(function(variable) {
-                            if (!variable.defs.length) {
-                                return; // Skip 'arguments'
-                            }
-                            // If variable's name was first bound in an upper scope, and the variable is not a parameter,
-                            // flag it.
-                            var bindingSource;
-                            if ((bindingSource = symbolMap[variable.name]) && bindingSource !== scope && !isParameter(variable)) { //$NON-NLS-0$
-                                reportShadow(variable.defs[0].name, variable.name);
-                            }
-                        });
-                    } catch(ex) {
-                        Logger.log(ex);
                     }
+                    var symbolMap = createSymbolMap(scope);
+                    scope.variables.forEach(function(variable) {
+                        if (!variable.defs.length) {
+                            return; // Skip 'arguments'
+                        }
+                        // If variable's name was first bound in an upper scope, and the variable is not a parameter,
+                        // flag it.
+                        var bindingSource;
+                        if ((bindingSource = symbolMap[variable.name]) && bindingSource !== scope && !isParameter(variable)) {
+                        	context.report(variable.defs[0].name, ProblemMessages['no-shadow'], {0: variable.name});
+                        }
+                    });
                 }
                 return {
-                    "Program": checkScope, //$NON-NLS-0$
-                    "FunctionDeclaration": checkScope, //$NON-NLS-0$
-                    "FunctionExpression": checkScope, //$NON-NLS-0$
-                    "ArrowFunctionExpression": checkScope //$NON-NLS-0$
+                    "Program": checkScope,
+                    "FunctionDeclaration": checkScope,
+                    "FunctionExpression": checkScope,
+                    "ArrowFunctionExpression": checkScope
                 };
-            }
         },
-        "no-shadow-global": {
-            description: 'Warn when a variable or parameter shadows a member from the global environment',
-            rule: function(context) {
-                
+        /** @callback */
+        "no-shadow-global": function(context) {
+        		function checkIdentifier(node, func) {
+        			switch(node.type) {
+        				case 'Identifier' :
+        				    func(node);
+		                    break;
+		                case 'Property' :
+		                   checkIdentifier(node.value, func);
+		                   break;
+                		case 'ArrayPattern' :
+                			var elements = node.elements;
+                			elements.forEach(function(element) {
+                				if (element) checkIdentifier(element, func);
+                			});
+                			break;
+                		case 'ObjectPattern' :
+                			var properties = node.properties;
+                			properties.forEach(function(property) {
+                				if (property) checkIdentifier(property, func);
+                			});
+                			break;
+        			}
+        		}
+                /**
+                 * @description Check if the given node is a shadow
+                 * @param {Object} node The AST node
+                 */
                 function checkShadow(node) {
                     var env = context.env ? context.env : {};
                     env.builtin = true;
                     switch(node.type) {
                         case 'VariableDeclarator': {
-                            if(env[Finder.findESLintEnvForMember(node.id.name)]) {
-                                context.report(node.id, "Variable '${0}' shadows a global member", {0: node.id.name});
-                            }
-                            break;
+                        	checkIdentifier(node.id, function(node) {
+                        		var name = node.name;
+								if(name && env[Finder.findESLintEnvForMember(name)]) {
+		                        	context.report(node, ProblemMessages['no-shadow-global'], {0: name});
+		                    	}
+		                    });
+                        	break;
                         }
                         case 'FunctionExpression':
-                        case 'FunctionDeclaration': {
+                        case 'FunctionDeclaration':
+                        case 'ArrowFunctionExpression': {
                             node.params.forEach(function(param) {
                                 if(param.type === 'Identifier' && env[Finder.findESLintEnvForMember(param.name)]) {
-                                    context.report(param, "Parameter '${0}' shadows a global member", {0: param.name, nls:'no-shadow-global-param'});
+                                    context.report(param, ProblemMessages['no-shadow-global-param'], {0: param.name, nls:'no-shadow-global-param'}); //$NON-NLS-1$
                                 }
                             });
                             break;
                         }
                     }
                 }
-                
+
                 return {
                     'FunctionExpression': checkShadow,
                     'FunctionDeclaration': checkShadow,
+                    'ArrowFunctionExpression': checkShadow,
                     'VariableDeclarator': checkShadow
                 };
-            }
         },
-		'no-sparse-arrays': {
-		    description: 'Warn when sparse arrays are defined',
-		    rule: function(context) {
+        /** @callback */
+		'no-sparse-arrays': function(context) {
         		return {
+        			/* @callback */
         			'ArrayExpression' : function(node){
         			    if(node.elements.indexOf(null) > -1) {
-        			        context.report(node, "Sparse array declarations should be avoided.");
+        			        context.report(node, ProblemMessages['no-sparse-arrays']);
         			    }
         			}
         		};
-        	}
         },
-        "no-throw-literal": {
-            description: 'Warn when a Literal is used in a throw statement',
-            rule: function(context) {
+        /** @callback */
+        "no-throw-literal": function(context) {
                 return {
+                	/* @callback */
                     "ThrowStatement": function(node) {
-                        try {
-                            var argument = node.argument;
-                            // We have no type analysis yet, so to avoid false positives, assume any expr that
-                            // *could* generate an Error actually does.
-                            switch (argument.type) {
-                                case "Identifier":
-                                    if (argument.name !== "undefined") {
-                                        return;
-                                    }
-                                //$FALLTHROUGH$
-                                case "Literal":
-                                case "ObjectExpression":
-                                case "ArrayExpression":
-                                    context.report(argument, "Throw an Error instead.");
-                            }
-                        } catch (ex) {
-                            Logger.log(ex);
+                        var argument = node.argument;
+                        // We have no type analysis yet, so to avoid false positives, assume any expr that
+                        // *could* generate an Error actually does.
+                        switch (argument.type) {
+                            case "Identifier":
+                                if (argument.name !== "undefined") {
+                                    return;
+                                }
+                            //$FALLTHROUGH$
+                            case "Literal":
+                            case "ObjectExpression":
+                            case "ArrayExpression":
+                                context.report(argument, ProblemMessages['no-throw-literal']);
                         }
                     }
                 };
-           }
         },
-		"no-undef": {
-		    description: 'Warn when used variable or function has not been defined',
-		    rule: function(context) {
+        /** @callback */
+		"no-undef": function(context) {
+				/**
+				 * @description Checks if the node is a recovered node
+				 * @param {Object} node The AST node
+				 * @returns {Boolean} If the node is recovered
+				 */
+				function isRecoveredNode(node) {
+					return node.range && node.range[0] === node.range[1];
+				}
+                /**
+                 * @description If any of the variables defs are ImplicitGlobalVariable
+                 * @param {Object} variable The variable
+                 * @returns {Boolean} if any of the variable defs are ImplicitGlobalVariable
+                 */
                 function isImplicitGlobal(variable) {
                     return variable.defs.every(function(def) {
-                        return def.type === "ImplicitGlobalVariable";  //$NON-NLS-0$
+                        return def.type === "ImplicitGlobalVariable";
                     });
                 }
-            
+                /**
+                 * @description description
+                 * @param scope
+                 * @param ref
+                 * @returns returns
+                 */
                 function getDeclaredGlobalVariable(scope, ref) {
                     var declaredGlobal = null;
                     scope.variables.some(function(variable) {
@@ -1013,383 +1385,1283 @@ define([
                     });
                     return declaredGlobal;
                 }
-            
+
                 return {
-                    "Program": function(/*node*/) {  //$NON-NLS-0$
-            			try {
-            	            var globalScope = context.getScope();
-            	
-            	            globalScope.through.forEach(function(ref) {
-            	                var variable = getDeclaredGlobalVariable(globalScope, ref),
-            	                    name = ref.identifier.name;
-            	                if (!variable) {
-            	                    var env = Finder.findESLintEnvForMember(name);
-            	                    var inenv = env ? '-inenv' : '';
-            	                    var nls = 'no-undef-defined';
-            	                    context.report(ref.identifier, "'${0}' is not defined.", {0:name, nls: nls, pid: nls+inenv});
-            	                } else if (ref.isWrite() && variable.writeable === false) {
-            	                    context.report(ref.identifier, "'${0}' is read only.", {0:name, nls: 'no-undef-readonly'});
-            	                }
-            	            });
-                    	}
-                    	catch(ex) {
-                    		Logger.log(ex);
-                    	}
+                	/* @callback */
+                    "Program": function(node) {
+        	            var globalScope = context.getScope();
+
+        	            globalScope.through.forEach(function(ref) {
+    	            	    if (isRecoveredNode(ref.identifier)) {
+    	            	    	return;
+    	            	    }
+        	                var variable = getDeclaredGlobalVariable(globalScope, ref),
+        	                    name = ref.identifier.name;
+        	                if (!variable) {
+        	                	// Check if Tern knows about a definition in another file
+        	                	var env = Finder.findESLintEnvForMember(name);
+        	                    var tern = context.getTern();
+								var query = {end: ref.identifier.start};
+								var foundType = null;
+								var expr = tern.findQueryExpr(tern.file, query);
+								if (!expr) {
+									return;
+								}
+								var type = tern.findExprType(query, tern.file, expr);
+								// The origin could be a primitive in the same file (a=1;) which we still want to mark
+								if (type && type.origin && type.origin !== tern.file.name){
+									foundType = type;
+								}
+            	                if (!foundType){
+            	                    var inenv = env ? '-inenv' : ''; //$NON-NLS-1$
+            	                    var nls = 'no-undef-defined'; //$NON-NLS-1$
+            	                    context.report(ref.identifier, ProblemMessages['no-undef-defined'], {0:name, nls: nls, pid: nls+inenv, data: name});
+        	                    }
+        	                }
+        	            });
                     }
                 };
-            
-            }
         },
-		'no-unreachable' : {
-		    description: 'Warn when code is not reachable',
-		    rule: function(context) {
-                /**
-                 * @description Returns if the statement is 'hoisted'
-                 * @param {Object} node The AST node to check
-                 * @see http://www.adequatelygood.com/JavaScript-Scoping-and-Hoisting.html
-                 * @returns {Boolean} If the node is hoisted (allowed) after a returnable statement
-                 */
-                function hoisted(node) {
-                    switch(node.type) {
-                        case 'FunctionDeclaration':
-                        case 'VariableDeclaration':
-                            return true;
-                    }
-                    return false;
-                }
-                
-                /**
-                 * @description Check the array of child nodes for any unreachable nodes
-                 * @param {Array} children The child nodes to check
-                 * @since 6.0
-                 */
-                function checkUnreachable(children) {
-                    try {
-                        var i = 0;
-                        for(i; i < children.length; i++) {
-                            if(util.returnableStatement(children[i])) {
-                                break;
-                            }
-                        }
-                        //mark all the remaining child statemnts as unreachable
-                        for(i++; i < children.length; i++) {
-                            var child = children[i];
-                            if(!hoisted(child) && child.type !== "EmptyStatement") {
-                                context.report(child, "Unreachable code.");
-                            }
-                        }
-                    }
-                    catch(ex) {
-                        Logger.log(ex);
-                    }
-                }
-        
-                return {
-                    "BlockStatement": function(node) {
-                        checkUnreachable(node.body);
-                    },
-            
-                    "SwitchCase": function(node) {
-                        checkUnreachable(node.consequent);
-                    }
-                };
-        	}
+        /** @callback */
+        'no-undef-expression': function(context){
+			return {
+				/* @callback */
+				'MemberExpression': function(node){
+					if (node.property && node.object && node.object.type !== 'ThisExpression'){
+						if (node.parent && node.parent.type === 'CallExpression' && node.parent.callee && node.parent.callee === node){
+							var propName = node.property.name ? node.property.name : node.property.value;
+							if (!propName) {
+								return;
+							}
+							var query = {start: node.property.start, end: node.property.end};
+							var tern = context.getTern();
+							var expr = tern.findQueryExpr(tern.file, query);
+							if (!expr) {
+								// no expression found. No need to look for the type
+								return;
+							}
+							var type = tern.findExprType(query, tern.file, expr);
+							if (type && type.propertyOf) {
+								if(type.guess) {
+									return;
+								}
+								if(type.propertyOf.props[propName]) {
+									//if we found a type and its a direct property, quit
+									return;
+								}
+								if(!type.propertyOf.proto) {
+									//this is a stub type - i.e. from a JSDoc type that does not exist
+									return;
+								}
+							}
+							query.end = node.object.end;
+	                		expr = tern.findQueryExpr(tern.file, query);
+							if (!expr) {
+								// no expression found so we cannot get the type
+								return;
+							}
+	                		type = tern.findExprType(query, tern.file, expr);
+							if (type && type.types && type.types.length > 0 && !type.guess) {
+	                			for (var i = 0; i < type.types.length; i++) {
+	                				if (type.types[i].props && type.types[i].props[propName]) {
+	                					return;
+	                				}
+	                				if (type.types[i].proto && type.types[i].proto.name !== 'Object.prototype') {
+	                					if(type.types[i].proto.props[propName]) {
+	                						return;
+	                					}
+            						}
+	                			}
+            					var name = type.types[0].name;
+            					if (!name && type.originNode){
+            						name = type.originNode.name;
+        						}
+            					var origin = type.types[0].origin;
+            					if (!origin && type.origin){
+            						origin = type.origin;
+            					}
+                				if (type.types.length === 1 && name && origin){
+                					if(name.indexOf("!known_modules.") === 0) { //$NON-NLS-1$
+                						name = name.slice("!known_modules.".length);
+                					}
+                					if (/\./.test(origin)){
+            							var originNode = type.types[0].originNode ? type.types[0].originNode : type.originNode;
+            							if (originNode){
+                							var index = origin.lastIndexOf('/');
+                							if (index >= 0){
+                								origin = origin.substring(index+1);
+                							}
+											context.report(node.property, ProblemMessages['no-undef-expression-defined-object'], {0:propName, 1: name, 2: origin, nls: 'no-undef-expression-defined-object', data: {file: originNode.sourceFile.name, start: originNode.start, end: originNode.end}}); //$NON-NLS-1$
+										} else {
+											context.report(node.property, ProblemMessages['no-undef-expression-defined'], {0:propName, nls: 'no-undef-expression-defined'}); //$NON-NLS-1$
+										}
+									} else {
+										context.report(node.property, ProblemMessages['no-undef-expression-defined-index'], {0:propName, 1: name, 2: origin, nls: 'no-undef-expression-defined-index'}); //$NON-NLS-1$
+									}
+								} else {
+									context.report(node.property, ProblemMessages['no-undef-expression-defined'], {0:propName, nls: 'no-undef-expression-defined'}); //$NON-NLS-1$
+								}
+	                		}
+                		}
+                	}
+            	}
+        	};
         },
-		"no-unused-params" : {
-		    description: 'Warn when function parameters are not used',
-		    rule: function(context) {
+        /* @callback */
+        'no-undef-init': function(context) {
+        		return {
+        			/* @callback */
+        			'VariableDeclarator': function(node) {
+        				if(node.init && node.init.type === 'Identifier' && node.init.name === 'undefined') {
+    						context.report(node.init, ProblemMessages['no-undef-init']);
+        				}
+        			}
+        		};
+        },
+		/** @callback */
+		'no-unreachable': function(context) {
+			var currentCodePath = null;
+			/**
+			 * Checks whether or not a given variable declarator has the initializer.
+			 * @param {ASTNode} node - A VariableDeclarator node to check.
+			 * @returns {boolean} `true` if the node has the initializer.
+			 */
+			function isInitialized(node) {
+				return Boolean(node.init);
+			}
+
+			/**
+			 * Checks whether or not a given code path segment is unreachable.
+			 * @param {CodePathSegment} segment - A CodePathSegment to check.
+			 * @returns {boolean} `true` if the segment is unreachable.
+			 */
+			function isUnreachable(segment) {
+				return !segment.reachable;
+			}
+			
+			/**
+			 * Reports a given node if it's unreachable.
+			 * @param {ASTNode} node - A statement node to report.
+			 * @returns {void}
+			 */
+			function reportIfUnreachable(node) {
+				if (currentCodePath.currentSegments.every(isUnreachable)) {
+					context.report(node, ProblemMessages['no-unreachable']);
+				}
+			}
+
+			return {
+
+				// Manages the current code path.
+				onCodePathStart: function(codePath) {
+					currentCodePath = codePath;
+				},
+
+				onCodePathEnd: function() {
+					currentCodePath = currentCodePath.upper;
+				},
+
+				// Registers for all statement nodes (excludes FunctionDeclaration).
+				BlockStatement: reportIfUnreachable,
+				BreakStatement: reportIfUnreachable,
+				ClassDeclaration: reportIfUnreachable,
+				ContinueStatement: reportIfUnreachable,
+				DebuggerStatement: reportIfUnreachable,
+				DoWhileStatement: reportIfUnreachable,
+				EmptyStatement: reportIfUnreachable,
+				ExpressionStatement: reportIfUnreachable,
+				ForInStatement: reportIfUnreachable,
+				ForOfStatement: reportIfUnreachable,
+				ForStatement: reportIfUnreachable,
+				IfStatement: reportIfUnreachable,
+				ImportDeclaration: reportIfUnreachable,
+				LabeledStatement: reportIfUnreachable,
+				ReturnStatement: reportIfUnreachable,
+				SwitchStatement: reportIfUnreachable,
+				ThrowStatement: reportIfUnreachable,
+				TryStatement: reportIfUnreachable,
+
+				VariableDeclaration: function(node) {
+					if (node.kind !== "var" || node.declarations.some(isInitialized)) {
+						// if it has an initialization, this means the variable is not hoisted.
+						reportIfUnreachable(node);
+					}
+				},
+
+				WhileStatement: reportIfUnreachable,
+				WithStatement: reportIfUnreachable,
+				ExportNamedDeclaration: reportIfUnreachable,
+				ExportDefaultDeclaration: reportIfUnreachable,
+				ExportAllDeclaration: reportIfUnreachable
+			};
+		},
+		/** @callback */
+		"no-unused-params" : function(context) {
+                /**
+                 * @description If the node has an @callback comment
+                 * @param {Object} node The AST node
+                 * @returns {Boolean} If the node has an @callback comment
+                 */
                 function hasCallbackComment(node) {
                     if(node && node.leadingComments) {
                         var len = node.leadingComments.length;
                         for(var i = 0; i < len; i++) {
                             var comment = node.leadingComments[i];
-                            if(comment.type === 'Block' && /\s*(?:@callback)\s+/.test(comment.value)) {
+                            if (comment.type === 'Block' && /\s*(?:@(callback|public))\s+/.test(comment.value)) {
                                 return true;
                             }
                         }
                     }
                     return false;
                 }
-        
-        		function check(node) {
-        			try {
-        				var scope = context.getScope();
-        				var kids = scope.childScopes;
-        				if(scope.functionExpressionScope && kids && kids.length) {
-        					scope = kids[0];
-        				}
-        				scope.variables.forEach(function(variable) {
-        					if (!variable.defs.length || variable.defs[0].type !== "Parameter") { // only care about parameters  //$NON-NLS-0$
-        						return;
-        					}
-        					var defnode = variable.defs[0].name;
-        					if (!variable.references.length) {
-        					    var pid = 'no-unused-params';
-        					    if(node.type === 'FunctionExpression') {
-        					        pid += '-expr';
-        					        if(hasCallbackComment(node) || (node.params && node.params.length > 0 && hasCallbackComment(node.params[0]))) { 
-        					            return;
-        					        }
-        					        var parent = node.parent;
-        					        if(parent.type === 'Property' && (hasCallbackComment(parent) || hasCallbackComment(parent.key))) {
-        					            return;
-        					        }
-        					        if(parent.type === 'MemberExpression') {
-        					            //https://bugs.eclipse.org/bugs/show_bug.cgi?id=457067
+
+        		/**
+		         * @description Check the given AST node 
+		         * @param {Object} node The AST node
+		         */
+		        function check(node) {
+    				var scope = context.getScope();
+    				var kids = scope.childScopes;
+    				if(scope.functionExpressionScope && kids && kids.length) {
+    					scope = kids[0];
+    				}
+    				scope.variables.forEach(function(variable) {
+    					if (!variable.defs.length || variable.defs[0].type !== "Parameter") { // only care about parameters
+    						return;
+    					}
+    					var defnode = variable.defs[0].name;
+    					if (!variable.references.length) {
+    					    var pid = 'no-unused-params'; //$NON-NLS-1$
+    					    if(node.type === 'FunctionExpression') {
+    					        pid += '-expr'; //$NON-NLS-1$
+    					        if(hasCallbackComment(node) || node.params && node.params.length > 0 && hasCallbackComment(node.params[0])) {
+    					            return;
+    					        }
+    					        var parent = node.parent;
+    					        switch(parent.type) {
+    					        	case 'Property': {
+    					        		if(hasCallbackComment(parent) || hasCallbackComment(parent.key)) {
+    					        			return;
+    					        		}
+    					        		break;
+    					        	}
+    					        	case 'MemberExpression': {
+        					        	//https://bugs.eclipse.org/bugs/show_bug.cgi?id=457067
         					            // func epxrs part of call expressions, i.e. bind-like calls
         					            //Esprima tags the root containing expression with the doc, not the func expr
         					            parent = parent.parent;
         					            if(parent.type === 'CallExpression' && hasCallbackComment(parent)) {
         					               return;
         					            }
-        					        }
-        					    }
-        						context.report(defnode, "Parameter '${0}' is never used.", {0:defnode.name, pid: pid}); //$NON-NLS-0
-        					}
-        				});
-        			}
-        			catch(ex) {
-        				Logger.log(ex);
-        			}
+    					        		break;
+    					        	}
+    					        	case 'AssignmentExpression': {
+    					        		var left = parent.left;
+        					        	if(left.type === 'MemberExpression') {
+        					        		if(hasCallbackComment(left)) {
+        					        			return;
+        					        		}
+        					        	} else if(left.type === 'Identifier') {
+        					        		if(hasCallbackComment(left)) {
+        					        			return;
+        					        		}
+        					        	}
+        					        	parent = parent.parent;
+        					        	if (parent && parent.type === "ExpressionStatement") {
+        					        		if (hasCallbackComment(parent)) {
+        					        			return;
+        					        		}
+        					        	}
+    					        		break;
+    					        	}
+    					        	case 'VariableDeclarator': {
+    					        		if(hasCallbackComment(parent.id) || hasCallbackComment(parent)) {
+    					        			return;
+    					        		}
+    					        		parent = parent.parent;
+    					        		if (parent && parent.type === "VariableDeclaration") {
+    					        			if(hasCallbackComment(parent)) {
+    					        				return;
+    					        			}
+    					        		}
+    					        		break;
+    					        	}
+    					        }
+    					    } else if(node.type === 'ArrowFunctionExpression') {
+    					    	pid += '-arrow'; //$NON-NLS-1$
+    					    	/*
+					        	//check the parent: () => {a => {}}
+					        	//the comment is attached to the ExpressionStatement
+					        	if(node.parent.type === 'ExpressionStatement' && hasCallbackComment(node.parent)) {
+					        		return;
+					        	}
+    					        */
+    					    }
+    						context.report(defnode, ProblemMessages['no-unused-params'], {0:defnode.name, pid: pid}); //$NON-NLS-0
+    					}
+    				});
         		}
-        
+
         		return {
-        			"FunctionDeclaration": check,  //$NON-NLS-0$
-        			"FunctionExpression": check  //$NON-NLS-0$
+        			"FunctionDeclaration": check,
+        			"FunctionExpression": check,
+        			"ArrowFunctionExpression": check
         		};
-        	}
         },
-		"no-unused-vars": {
-		    description: 'Warn when declared variables are not used',
-		    rule: function(context) {
-        		function isRead(ref) {
-        			return ref.isRead();
-        		}
-        
-        		function getReferences(scope, variable) {
-        			var refs = variable.references;
-        			if (scope.type === "global") {  //$NON-NLS-0$
-        				// For whatever reason, a reference to some variable 'x' defined in global scope does not cause an entry
-        				// in x.references or globalScope.references. So we append any refs in globalScope.through that mention x.
-        				refs = refs.concat(scope.through.filter(function(ref) {
-        					return ref.identifier.name === variable.name;
-        				}));
-        			}
-        			return refs;
-        		}
-        
-        		function check(/**node*/) {
-        			try {
-        				var scope = context.getScope();
-        				scope.variables.forEach(function(variable) {
-        					if (!variable.defs.length || variable.defs[0].type === "Parameter") { // Don't care about parameters  //$NON-NLS-0$
-        						return;
-        					}
-        					var node = variable.defs[0].node;
-        					var references = getReferences(scope, variable), id = node.id;
-        					if (!references.length) {
-        					    if(node.type === 'FunctionDeclaration') {
-        					       context.report(id, "Function '${0}' is never used.", {0:id.name, nls: 'no-unused-vars-unused-funcdecl'});
-        					    } else {
-        						   context.report(id, "'${0}' is never used.", {0:id.name, nls: 'no-unused-vars-unused'});
-        						}
-        					} else if (!references.some(isRead)) {
-        						context.report(id, "'${0}' is never read.", {0:id.name, nls: 'no-unused-vars-unread'});
-        					}
-        				});
-        			}
-        			catch(ex) {
-        				Logger.log(ex);
-        			}
-        		}
-        
-        		return {
-        			"Program": check,  //$NON-NLS-0$
-        			"FunctionDeclaration": check,  //$NON-NLS-0$
-        			"FunctionExpression": check  //$NON-NLS-0$
-        		};
-        	}
+        /** @callback */
+		"no-unused-vars": function(context) {
+			var importsHandled = false;
+    		/**
+	         * @description If the reference is read-only
+	         * @param {{}}} ref 
+	         * @returns {Boolean} If the reference is read-only
+	         */
+	        function isRead(ref) {
+    			return ref.isRead();
+    		}
+
+    		/**
+	         * @description Get all of the referenes to the givenvariable in the given scope
+	         * @param {Object} scope The scope to check
+	         * @param {Object} variable The variable to find refs to 
+	         * @returns {Array.<Object>} The array of references
+	         */
+	        function getReferences(scope, variable) {
+    			var refs = variable.references;
+    			if (scope.type === "global") {
+    				// For whatever reason, a reference to some variable 'x' defined in global scope does not cause an entry
+    				// in x.references or globalScope.references. So we append any refs in globalScope.through that mention x.
+    				refs = refs.concat(scope.through.filter(function(ref) {
+    					return ref.identifier.name === variable.name;
+    				}));
+    			}
+    			return refs;
+    		}
+		    function checkIdentifier(node, func) {
+    			switch(node.type) {
+    				case 'Identifier' :
+    				    func(node);
+	                    break;
+	                case 'Property' :
+	                   checkIdentifier(node.value, func);
+	                   break;
+            		case 'ArrayPattern' :
+            			var elements = node.elements;
+            			elements.forEach(function(element) {
+            				if (element) checkIdentifier(element, func);
+            			});
+            			break;
+            		case 'ObjectPattern' :
+            			var properties = node.properties;
+            			properties.forEach(function(property) {
+            				if (property) checkIdentifier(property, func);
+            			});
+            			break;
+    			}
+    		}
+    		/**
+	         * @description Check the current scope for unused vars 
+	         */
+	        function check(node) {
+				var scope = context.getScope();
+				var variables = null;
+				if (node.type === 'Program') {
+					var ecmaFeatures = context.parserOptions && context.parserOptions.ecmaFeatures || {};
+					if (ecmaFeatures.globalReturn || node.sourceType === "module") {
+						variables = scope.childScopes[0].variables;
+					} else {
+						variables = scope.variables;
+					}
+				} else {
+					variables = scope.variables;
+				}
+
+				if(importsHandled || node.type === 'ImportDeclaration') {
+					return;
+				}
+				variables.forEach(function(variable) {
+					if (!variable.defs.length || variable.defs[0].type === "Parameter") { // Don't care about parameters
+						return;
+					}
+					var defNode = variable.defs[0].node;
+					var references = getReferences(scope, variable), id = defNode.id, pb = 'no-unused-vars-unused'; //$NON-NLS-1$
+					//TODO this will have to be moved to the new no-useless-imports rule
+					if(variable.defs[0].type === "ImportBinding") {
+						id = defNode.local;
+						pb = 'no-unused-vars-import'; //$NON-NLS-1$
+						importsHandled = true;
+					}
+					if (id && id.range && id.range[0] === id.range[1] || !id) {
+						// recovered node - the range cannot be empty for a "real" node
+						return;
+					}
+					if (!references.length) {
+					    if(defNode.type === 'FunctionDeclaration') {
+				    	   var tern = context.getTern();
+				    	   var refQuery = {end: defNode.id.start};
+				    	   var filename = tern.file.name;
+				    	   var refs = tern.findRefs(refQuery, tern.file);
+				    	   var result = [];
+				    	   if (refs && Array.isArray(refs.refs)) {
+				    	   		// filtering the refs from the current file - remove the one that matches the current node
+				    	   		refs.refs.forEach(function(match) {
+				    	   			if (match.file !== filename) {
+				    	   				// any match in a different file is a good match
+				    	   				result.push(match);
+				    	   			}
+				    	   		});
+				    	   }
+				    	   if (result === null || result.length === 0) {
+					           context.report(id, ProblemMessages['no-unused-vars-unused-funcdecl'], {0:id.name, nls: 'no-unused-vars-unused-funcdecl'}); //$NON-NLS-1$
+					       }
+			        	} else if (defNode.type === 'VariableDeclarator'){
+			        		// Variables can be marked as 'exported' in a comment if they are used as global variables
+							var comments = variable.defs[0].parent.leadingComments;
+							var report = true;
+							if (comments && comments.length > 0){
+								for (var i = 0; i < comments.length; i++) {
+									if (comments[i].value.toLowerCase().indexOf('exported') >= 0){ //$NON-NLS-1$
+										report = false;
+										break;
+									}
+								}
+							}
+							if (report) {
+								context.report(id, ProblemMessages['no-unused-vars-unused'], {0:id.name, nls: 'no-unused-vars-unused', pid: pb}); //$NON-NLS-1$
+							}
+					    } else {
+						   context.report(id, ProblemMessages['no-unused-vars-unused'], {0:id.name, nls: 'no-unused-vars-unused', pid: pb}); //$NON-NLS-1$
+						}
+					} else if (!references.some(isRead)) {
+						// report error on the identifier that is matching the variable name
+						checkIdentifier(id, function(node) {
+							if (node.name === variable.name) {
+								context.report(node, ProblemMessages['no-unused-vars-unread'], {0:node.name, nls: 'no-unused-vars-unread'}); //$NON-NLS-1$
+							}
+						});
+					}
+				});
+    		}
+
+    		return {
+    			"Program": check,
+    			"Program:exit": function() {importsHandled = false;},
+    			"FunctionDeclaration": check,
+    			"FunctionExpression": check,
+    			"ArrowFunctionExpression": check,
+    			//TODO imports to be moved to no-useless-imports rule
+    			'ImportDeclaration': check,
+    		};
         },
-		"no-use-before-define": {
-		    description: 'Warn when a variable or function is used before it is defined',
-		    rule: function(context) {
+        /** @callback */
+		"no-use-before-define": function(context) {
+                /**
+                 * @description Checks the option to make sure its a boolean, if not return the default
+                 * @param {Boolean|Any} b The option to check
+                 * @param {Boolean} defaultValue The default to return if the option is not of type boolean
+                 * @returns {Boolean} The given option or the default, if the option is not a boolean
+                 */
                 function booleanOption(b, defaultValue) {
-            		return typeof b === "boolean" ? b : defaultValue;  //$NON-NLS-0$
+            		return typeof b === "boolean" ? b : defaultValue;
             	}
-        
+
         		var options = context.options,
         		    flag_vars = booleanOption(options[0], true),   // by default, flag vars
-        		    flag_funcs = booleanOption(options[1], false); // ... but not funcs
-        
-        		function check(/**node*/) {
-        				try {
-        				var scope = context.getScope();
-        				scope.references.forEach(function(ref) {
-        					var decl = util.getDeclaration(ref, scope), identifier = ref.identifier, name = identifier.name, defs;
-        					if (decl && (defs = decl.defs).length && identifier.range[0] < defs[0].node.range[0]) {
-        						var defType = defs[0].type;
-        						if ((!flag_funcs && defType === "FunctionName") || (!flag_vars && defType === "Variable")) {  //$NON-NLS-0$  //$NON-NLS-1$
+        		    flag_funcs = booleanOption(options[1], false), // ... but not funcs
+        		    flag_classes = booleanOption(options[2], true); // flag classes
+        		
+		        function checkScope(scope) {
+    				scope.references.forEach(function(ref) {
+    					var decl = util.getDeclaration(ref, scope), identifier = ref.identifier, name = identifier.name, defs;
+    					if (decl && (defs = decl.defs).length && identifier.range[0] < defs[0].node.range[0]) {
+    						var defType = defs[0].type;
+    						if ((!flag_funcs && defType === "FunctionName") || (!flag_vars && defType === "Variable") || (!flag_classes && defType === "ClassName")) {
+    							return;
+    						}
+    						context.report(identifier, ProblemMessages['no-use-before-define'], {0:name});
+    					}
+    				});
+        		}
+        		
+        		/*
+		         * @description Check the current scope for use
+		         */
+		        function check(node) {
+    				var scope = context.getScope();
+    				checkScope(scope);
+    				// If using ES6 modules check the child 'module' scope
+    				if (node.type === "Program" && node.sourceType === "module"){
+    					checkScope(scope.childScopes[0]);
+    				}
+        		}
+        		
+        		if (context.parserOptions.ecmaVersion >= 6){
+					return {
+						"Program": check,
+						"BlockStatement": check,
+						"SwitchStatement": check,
+						"ArrowFunctionExpression": function(node){
+							if (node.body.type !== "BlockStatement") {
+			                    check(node);
+			                }	
+						}
+					};
+				}
+				// ECMA 5
+				return {
+					"Program": check,
+					"FunctionExpression": check,
+					"FunctionDeclaration": check,
+					"ArrowFunctionExpression": check
+				};
+
+        },
+        /** @callback */
+        "radix": function(context) {
+                return {
+                	/* @callback */
+                    "CallExpression": function(call) {
+	                    var callee = call.callee;
+	                    if (callee.name === "parseInt" && callee.type === "Identifier" && call.arguments.length < 2) {
+	                        // Ensure callee actually resolves to the global `parseInt`
+	                        var shadowed = false;
+	                        for (var scope = context.getScope(); scope; scope = scope.upper) {
+	                            shadowed = scope.variables.some(function(variable) {
+	                                // Found a `parseInt` that is not the builtin
+	                                return variable.name === "parseInt" && variable.defs.length;
+	                            });
+	                            if (shadowed) {
+	                                break;
+	                            }
+	                        }
+	                        if (!shadowed) {
+	                            context.report(callee, ProblemMessages['radix'], null);
+	                        }
+	                    }
+	                }
+                };
+        },
+        /** @callback */
+		"no-mixed-spaces-and-tabs": function(context) {
+				var ignoredLocations = [];
+				// we define a regular expression that matches any line that starts with spaces after tabs before any other character
+				// any space after a tab \            (not a problem with smart-tabs)
+				//                        after any number of tabs or space at the beginning of the line (^)
+				// any tab after a space /
+				var lineStart = /^(?=[\t ]* \t)/; // smart-tabs enabled
+				//var lineStart = /^(?=[\t ]*( \t|\t ))/; // smart-tabs disabled
+
+				/**
+				 * @description Check the Program node in the AST (the whole AST)
+				 * @param {Object} node The AST node
+				 */
+				function checkProgram(node) {
+					var lines = context.getSourceLines();
+					var allComments = context.getAllComments();
+					
+					// add all comments to the ignored elements
+					allComments.forEach(function(node) {
+						ignoredLocations.push(node.loc);
+					});
+					
+					// now we check if the lines starts with a mix of tabs and spaces
+					lines.forEach(function(line, index) {
+						var match = lineStart.exec(line);
+						if (match !== null) {
+							// we got a match on the corresponding line
+							// we need to see if the match is within an existing comment or a literal
+							var currentLine = index + 1; // index is 0-based
+							var currentColumn = match.index + 1; // column is 1-based
+							if (searchInsideComments(ignoredLocations, { line: currentLine, column: currentColumn}) !== null) {
+								// the position is inside a comment so we ignore it - move to the next one
+								return;
+							}
+							context.report(node, { line: currentLine, column: currentColumn}, ProblemMessages['no-mixed-spaces-and-tabs']);
+						}
+					});
+				}
+				/**
+				 * @description Look inside comment locations
+				 * @param {Array.<Object>} locations The locations
+				 * @param {Object} loc The location to check
+				 * @returns {object} If a location was found
+				 */
+				function searchInsideComments(locations, loc) {
+					var min = 0;
+					var max = locations.length - 1;
+					var guess;
+				
+					while (min <= max) {
+						guess = Math.floor(min + (max - min) / 2);
+				
+						var currentLocation = locations[guess];
+						if (isLocationInside(loc, currentLocation)) {
+							return currentLocation;
+						}
+						else if (isBefore(loc, currentLocation)) {
+							max = guess - 1;
+						} else {
+							min = guess + 1;
+						}
+					}
+					return null;
+				}
+				/**
+				 * @description If the given location is inside one of the locations
+				 * @param {Object} givenLocation The location to check
+				 * @param {Array.<Object>} locations The array of locations
+				 * @returns {Boolean} If the given location is in one of the locations in the array
+				 */
+				function isLocationInside(givenLocation, locations) {
+					/**
+					 * Return true if the given location is inside the locations, false otherwise 
+					 */
+					var start = locations.start;
+					var end = locations.end;
+					var line = givenLocation.line;
+					var column = givenLocation.column;
+					
+					if (start.line < line) {
+						if (end.line > line) {
+							return true;
+						} else if (end.line === line) {
+							return end.column > column;
+						}
+					} else if (start.line === line) {
+						if (start.column < column) {
+							if (end.line > line) {
+								return true;
+							} else if (end.line === line) {
+								return end.column > column;
+							}
+						}
+					}
+					return false;
+				}
+				/**
+				 * @description If the given location is before ny in the array
+				 * @param {Object} givenLocation The location to check
+				 * @param {Array.<Object>} locations The array of locations
+				 * @returns {Boolean} If the given location is before any in the array
+				 */
+				function isBefore(givenLocation, locations) {
+					/**
+					 * Return true if the given location is before locations
+					 */
+					var start = locations.start;
+					var line = givenLocation.line;
+					var column = givenLocation.column;
+					
+					if (line < start.line) {
+						return true;
+					} else if (line === start.line) {
+						return column < start.column;
+					}
+					return false;
+				}
+
+				return {
+					"Program:exit": checkProgram
+				};
+		},
+		/** @callback */
+		"semi": function(context) {
+
+			var OPT_OUT_PATTERN = /[\[\(\/\+\-]/; // One of [(/+-
+			var options = context.options[1];
+			var never = context.options[0] === "never",
+				exceptOneLine = options && options.omitLastInOneLineBlock === true,
+				sourceCode = context.getSourceCode();
+
+			//--------------------------------------------------------------------------
+			// Helpers
+			//--------------------------------------------------------------------------
+
+			/**
+			 * Reports a semicolon error with appropriate location and message.
+			 * @param {ASTNode} node The node with an extra or missing semicolon.
+			 * @param {boolean} missing True if the semicolon is missing.
+			 * @returns {void}
+			 */
+			function report(node, missing) {
+				var message,
+					lastToken = sourceCode.getLastToken(node),
+					data = Object.create(null);
+
+				if (!missing) {
+					message = ProblemMessages["semi-missing"];
+					data.kind = "missing";
+				} else {
+					message = ProblemMessages["semi-extra"];
+					data.kind = "extra";
+				}
+
+				context.report(node, message, {data: data}, lastToken);
+			}
+			/**
+			 * Checks whether a token is a semicolon punctuator.
+			 * @param {Token} token The token.
+			 * @returns {boolean} True if token is a semicolon punctuator.
+			 */
+			function isSemicolon(token) {
+				return token.type === "Punctuator" && token.value === ";";
+			}
+
+			/**
+			 * Check if a semicolon is unnecessary, only true if:
+			 *   - next token is on a new line and is not one of the opt-out tokens
+			 *   - next token is a valid statement divider
+			 * @param {Token} lastToken last token of current node.
+			 * @returns {boolean} whether the semicolon is unnecessary.
+			 */
+			function isUnnecessarySemicolon(lastToken) {
+				var isDivider, isOptOutToken, lastTokenLine, nextToken, nextTokenLine;
+
+				if (!isSemicolon(lastToken)) {
+					return false;
+				}
+
+				nextToken = sourceCode.getTokenAfter(lastToken);
+
+				if (!nextToken) {
+					return true;
+				}
+
+				lastTokenLine = lastToken.loc.end.line;
+				nextTokenLine = nextToken.loc.start.line;
+				isOptOutToken = OPT_OUT_PATTERN.test(nextToken.value);
+				isDivider = nextToken.value === "}" || nextToken.value === ";";
+
+				return (lastTokenLine !== nextTokenLine && !isOptOutToken) || isDivider;
+			}
+
+			/**
+			 * Checks a node to see if it's in a one-liner block statement.
+			 * @param {ASTNode} node The node to check.
+			 * @returns {boolean} whether the node is in a one-liner block statement.
+			 */
+			function isOneLinerBlock(node) {
+				var nextToken = sourceCode.getTokenAfter(node);
+
+				if (!nextToken || nextToken.value !== "}") {
+					return false;
+				}
+
+				var parent = node.parent;
+
+				return parent && parent.type === "BlockStatement" &&
+					parent.loc.start.line === parent.loc.end.line;
+			}
+
+			/**
+			 * Checks a node to see if it's followed by a semicolon.
+			 * @param {ASTNode} node The node to check.
+			 * @returns {void}
+			 */
+			function checkForSemicolon(node) {
+				var lastToken = sourceCode.getLastToken(node);
+
+				if (never) {
+					if (isUnnecessarySemicolon(lastToken)) {
+						report(node, true);
+					}
+				} else {
+					if (!isSemicolon(lastToken)) {
+						if (!exceptOneLine || !isOneLinerBlock(node)) {
+							report(node);
+						}
+					} else {
+						if (exceptOneLine && isOneLinerBlock(node)) {
+							report(node, true);
+						}
+					}
+				}
+			}
+
+			/**
+			 * Checks to see if there's a semicolon after a variable declaration.
+			 * @param {ASTNode} node The node to check.
+			 * @returns {void}
+			 */
+			function checkForSemicolonForVariableDeclaration(node) {
+				var ancestors = context.getAncestors(),
+					parentIndex = ancestors.length - 1,
+					parent = ancestors[parentIndex];
+
+				if ((parent.type !== "ForStatement" || parent.init !== node) &&
+					(!/^For(?:In|Of)Statement/.test(parent.type) || parent.left !== node)
+				) {
+					checkForSemicolon(node);
+				}
+			}
+
+			//--------------------------------------------------------------------------
+			// Public API
+			//--------------------------------------------------------------------------
+
+			return {
+				VariableDeclaration: checkForSemicolonForVariableDeclaration,
+				ExpressionStatement: checkForSemicolon,
+				ReturnStatement: checkForSemicolon,
+				ThrowStatement: checkForSemicolon,
+				DoWhileStatement: checkForSemicolon,
+				DebuggerStatement: checkForSemicolon,
+				BreakStatement: checkForSemicolon,
+				ContinueStatement: checkForSemicolon,
+				ImportDeclaration: checkForSemicolon,
+				ExportAllDeclaration: checkForSemicolon,
+				ExportNamedDeclaration: function(node) {
+					if (!node.declaration) {
+						checkForSemicolon(node);
+					}
+				},
+				ExportDefaultDeclaration: function(node) {
+					if (!/(?:Class|Function)Declaration/.test(node.declaration.type)) {
+						checkForSemicolon(node);
+					}
+				}
+			};
+
+		},
+		/** @callback */
+        "unknown-require": function(context) {
+        	var directive;
+        	function checkDirective(node) {
+        		var _name = node.value;
+    			if(nodeModules[_name]) {
+    				_name = 'node'; //$NON-NLS-1$
+    			}
+        		if(directive) {
+        			if(directive.value.indexOf(_name) < 0) {
+						context.report(node, ProblemMessages['unknown-require-missing-env'], {0: _name, pid: 'unknown-require-missing-env', nls: 'unknown-require-missing-env', data: _name});        				 //$NON-NLS-1$ //$NON-NLS-2$
+        			}
+        		} else {
+        			context.report(node, ProblemMessages['unknown-require-missing-env'], {0: _name, pid: 'unknown-require-missing-env', nls: 'unknown-require-missing-env', data: _name}); //$NON-NLS-1$ //$NON-NLS-2$
+        		}
+        	}
+			function checkImportExport(node) {
+				var tern = context.getTern();
+				if(!tern.pluginRunning("es_modules")) { //$NON-NLS-1$
+					// create a location object to flag only the 'import' keyword
+					var token = context.getFirstToken(node);
+					context.report(node, ProblemMessages['esmodules-not-running'], {pid: 'unknown-require-not-running', nls: 'esmodules-not-running', data: 'es_modules'}, token); //$NON-NLS-1$ //$NON-NLS-3$ //$NON-NLS-2$
+				}
+			}
+        	return {
+        		"Program": function(node) {
+        			directive = Finder.findDirective(node, 'eslint-env'); //$NON-NLS-1$
+        		},
+				"ImportDeclaration" : checkImportExport,
+				"ExportAllDeclaration" : checkImportExport,
+				"ExportDefaultDeclaration" : checkImportExport,
+				"ExportNamedDeclaration" : checkImportExport,
+				"CallExpression": function(node) {
+      				if(node.callee.name === "require") {
+        				var args = node.arguments;
+        				if(args.length === 1) {
+        					var lib = args[0];
+        					if(lib.type === "Literal" && lib.value.charAt(0) !== '.') { //we don't check relative libs
+        						var tern = context.getTern();
+        						if(tern.file.ast && tern.file.ast.environments) {
+        							var envs = tern.file.ast.environments;
+        							if(envs.node) {
+        								if(!envs.amd && !tern.pluginRunning('node')) { //$NON-NLS-1$
+        									context.report(lib, ProblemMessages['unknown-require-not-running'], {0: 'node', pid: 'unknown-require-not-running', nls: 'unknown-require-not-running', data: 'node'}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+        									return;
+        								}
+        								if(envs.amd && !tern.pluginRunning('commonjs')) { //$NON-NLS-1$
+        									context.report(lib, ProblemMessages['unknown-require-not-running'], {0: 'commonjs', pid: 'unknown-require-not-running', nls: 'unknown-require-not-running', data: 'commonjs'}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+        									return;
+        								}
+        							}
+        						}
+        						if(tern.plugins[lib.value]) { //it has a named plugin
+        							checkDirective(lib);
         							return;
         						}
-        						context.report(identifier, "'${0}' was used before it was defined.", {0:name});
+        						//check the defs
+    							if(tern.getDef(lib.value)) {
+    								checkDirective(lib);
+    								return;
+    							}
+								//it might be a node built-in, this also confirms its in the running node def
+								var nodejs = tern.getDef('node'); //$NON-NLS-1$
+								if(nodejs) {
+									if(nodejs[lib.value]) {
+										checkDirective(lib);
+										return;
+									} else if(nodejs['!define'] && nodejs['!define'][lib.value]) {
+										checkDirective(lib);
+										return;
+									}
+								}
+								if(tern.libKnown(lib.value)) {
+									checkDirective(lib);
+									return;
+								}
+								//TODO check for the module having been loaded via the graph
+								if(tern.optionalPlugins[lib.value]) {
+									//we known about it
+									context.report(lib, ProblemMessages['unknown-require-plugin'], {pid: 'unknown-require-plugin', nls: 'unknown-require-plugin', data: lib.value}); //$NON-NLS-2$ //$NON-NLS-1$
+								} else if(nodeModules[lib.value]) {
+									context.report(lib, ProblemMessages['unknown-require-plugin'], {pid: 'unknown-require-plugin', nls: 'unknown-require-plugin', data: 'node'}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+								} else {
+									var env = tern.getEnvFromDep(lib.value);
+									if(!tern.pluginRunning(env)) {
+										context.report(lib, ProblemMessages['unknown-require-not-running'], {0: env, pid: 'unknown-require-not-running', nls: 'unknown-require-not-running', data: env}); //$NON-NLS-1$ //$NON-NLS-2$
+									} else {
+										context.report(lib, ProblemMessages['unknown-require'], {data: lib.value});
+									}
+								}
         					}
-        				});
-        			}
-        			catch(ex) {
-        				Logger.log(ex);
-        			}
-        		}
-        
-        		return {
-        			"Program": check,  //$NON-NLS-0$
-        			"FunctionExpression": check,  //$NON-NLS-0$
-        			"FunctionDeclaration": check  //$NON-NLS-0$
-        		};
-        	}
-        },
-        "radix": {
-            description: "Warn when parseInt() is called without the 'radix' parameter.",
-            rule: function(context) {
-                function checkParseInt(call) {
-                    var callee = call.callee;
-                    if (callee.name === "parseInt" && callee.type === "Identifier" && call.arguments.length < 2) { //$NON-NLS-1$ //$NON-NLS-0$
-                        // Ensure callee actually resolves to the global `parseInt`
-                        var shadowed = false;
-                        for (var scope = context.getScope(); scope; scope = scope.upper) { //$NON-NLS-0$
-                            shadowed = scope.variables.some(function(variable) {
-                                // Found a `parseInt` that is not the builtin
-                                return variable.name === "parseInt" && variable.defs.length; //$NON-NLS-0$
-                            });
-                            if (shadowed) {
-                                break;
-                            }
-                        }
-                        if (!shadowed) {
-                            context.report(callee, "Missing radix parameter.", null);
-                        }
-                    }
-                }
-                return {
-                    "CallExpression": checkParseInt
-                };
-            }
-        },
-		"semi": {
-		    description: 'Warn about missing semicolons',
-		    rule: function(context) {
-        		function checkForSemicolon(node) {
-        			try {
-        				var tokens = context.getTokens(node);
-        				var len = tokens.length;
-        				var t = tokens[len - 1];
-        				if (t && t.type === "Punctuator" && t.value === ";") {  //$NON-NLS-0$  //$NON-NLS-1$
-        					return;
         				}
-        				context.report(node, "Missing semicolon.", null, t /* expose the bad token */);
-        			}
-        			catch(ex) {
-        				Logger.log(ex);
         			}
         		}
-        
-        		function checkVariableDeclaration(node) {
-        			try {
-        				var ancestors = context.getAncestors(node),
-        				    parent = ancestors[ancestors.length - 1],
-        				    parentType = parent.type;
-        				if ((parentType === "ForStatement" && parent.init === node) || (parentType === "ForInStatement" && parent.left === node)){  //$NON-NLS-0$  //$NON-NLS-1$
-        					// One of these cases, no semicolon token is required after the VariableDeclaration:
-        					// for(var x;;)
-        					// for(var x in y)
-        					return;
-        				}
-        				checkForSemicolon(node);
-        			}
-        			catch(ex) {
-        				Logger.log(ex);
-        			}
-        		}
-        
-        		return {
-        			"VariableDeclaration": checkVariableDeclaration,  //$NON-NLS-0$
-        			"ExpressionStatement": checkForSemicolon,  //$NON-NLS-0$
-        			"ReturnStatement": checkForSemicolon,  //$NON-NLS-0$
-        			"ThrowStatement": checkForSemicolon,  //$NON-NLS-0$
-        			"BreakStatement": checkForSemicolon,  //$NON-NLS-0$
-        			"ContinueStatement": checkForSemicolon  //$NON-NLS-0$
-        		};
-        	}
+        	};
         },
-		"use-isnan" : {
-		    description: 'Disallow comparison to the value NaN',
-		    rule: function(context) {
+        /** @callback */
+		"use-isnan": function(context) {
         		return {
+        			/* @callback */
         			'BinaryExpression' : function(node) {
-        				try {
         					if(node.left.type === 'Identifier' && node.left.name === 'NaN') {
-        						context.report(node.left, 'Use the isNaN function to compare with NaN.', null, node.left);
+        						context.report(node.left, ProblemMessages['use-isnan'], null, node.left);
         					} else if(node.right.type === 'Identifier' && node.right.name === 'NaN') {
-        						context.report(node.right, 'Use the isNaN function to compare with NaN.', null, node.right);
+        						context.report(node.right, ProblemMessages['use-isnan'], null, node.right);
         					}
-        				}
-        				catch(ex) {
-        					Logger.log(ex);
-        				}
         			}
         		};
-        	}
         },
-		'valid-typeof' : {
-		    description: 'Warn when incorrectly comparing the result of a typeof expression',
-		    rule: function(context) {
+        /** @callback */
+		'valid-typeof': function(context) {
         		//https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/typeof
-        		var symbols = ['undefined', 'object', 'function', 'boolean', 'number', 'string', 'symbol'];
+        		var symbols = ['undefined', 'object', 'function', 'boolean', 'number', 'string', 'symbol']; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
         		var ops = ['==', '===', '!=', '!=='];
-        		
+
         		return {
+        			/* @callback */
         			'UnaryExpression' : function(node){
         			    if(node.operator === 'typeof') {
         			        var parent = node.parent;
-        			        var val = parent.left === node ? parent.right : parent.left;
-        			        if(parent && parent.type === 'BinaryExpression' && 
-        			             ops.indexOf(parent.operator) > -1 &&
-        			             (val.type !== 'Literal' || symbols.indexOf(val.value) < 0)) {
-        			            context.report(val, "Invalid typeof comparison.");
+        			        if(parent && parent.type === 'BinaryExpression' &&
+        			            ops.indexOf(parent.operator) > -1) {
+           			            var val = parent.left === node ? parent.right : parent.left;
+        			            if (val.type !== 'Literal' || symbols.indexOf(val.value) < 0) {
+        			                context.report(val, ProblemMessages['valid-typeof']);
+        			            }
         			        }
         			    }
         			}
         		};
-        	}
-        }
-    };
+        },
+        /**
+         * @callback
+         */
+        'missing-requirejs': function(context) {
+        	return {
+        		'CallExpression': function(node) {
+        			if(node.callee.name === "define") {
+        				if(node.arguments.length === 1 && (node.arguments[0].type === 'FunctionExpression' || node.arguments[0].type === 'ObjectExpression')) {
+        					if(!context.getTern().pluginRunning('requirejs')) { //$NON-NLS-1$
+        						context.report(node.callee, ProblemMessages['missing-requirejs'], {data: 'requirejs'}); //$NON-NLS-1$
+        					}
+        				} else if(node.arguments.length === 3 && node.arguments[0].type === 'Literal' && typeof node.arguments[0].value === 'string' 
+        							&& node.arguments[1] && node.arguments[1].type === 'ArrayExpression' && node.arguments[2].type === 'FunctionExpression') {
+        					if(!context.getTern().pluginRunning('requirejs')) { //$NON-NLS-1$
+        						context.report(node.callee, ProblemMessages['missing-requirejs'], {data: 'requirejs'}); //$NON-NLS-1$
+        					}
+        				} else if(node.arguments.length === 2 && node.arguments[0].type === 'ArrayExpression' && node.arguments[1] && node.arguments[1].type === 'FunctionExpression') {
+        					if(!context.getTern().pluginRunning('requirejs')) { //$NON-NLS-1$
+        						context.report(node.callee, ProblemMessages['missing-requirejs'], {data: 'requirejs'}); //$NON-NLS-1$
+        					}
+        				}
+    				}
+        		}
+        	};	
+        },
+        // Rules consumed from ESLint 3rd party library
+		'accessor-pairs': accessorPairs,
+		'no-control-regex': noControlRegex,
+		'no-duplicate-case': noDuplicateCase,
+		'no-empty-character-class': noEmptyCharClasses,
+		'no-extra-boolean-cast': noExtraBoolCast,
+		'no-extra-parens': noExtraParens,
+		'no-invalid-regexp': noInvalidRegExp,
+		'no-negated-in-lhs': noNegatedInLhs,
+		'no-obj-calls': noObjCalls,
+		'no-eq-null' : noEqNull,
+		'no-else-return': noElseReturn,
+		'no-empty-label': noEmptyLabel,
+		'no-self-compare': noSelfCompare,
+		'no-irregular-whitespace': noIrregularWhitespace,
+		'no-const-assign' : noConstAssign,
+		/** @callback */
+		'no-self-assign': function(context) {
+				/**
+				 * @description Check the variable declarator node for self-assignment
+				 * @param {Object} variableDeclarator The AST node
+				 */
+				function checkVariableDeclarator(variableDeclarator) {
+					var init = variableDeclarator.init;
+					var id = variableDeclarator.id;
+					if (init
+							&& init.type === 'Identifier'
+							&& id.type === 'Identifier'
+							&& id.name === init.name) {
+						context.report(variableDeclarator, ProblemMessages['no-self-assign'], {0: id.name, pid: 'no-self-assign', nls: 'no-self-assign'}); //$NON-NLS-1$ //$NON-NLS-2$
+					}
+				}
+				/**
+				 * @description Check the assingment expression node for self-assignment
+				 * @param {Object} assignment The AST node
+				 */
+				function checkAssignmentExpression(assignment) {
+					if (assignment.operator === '='){
+						var left = assignment.left;
+						var right = assignment.right;
+						if (left.type === 'Identifier'
+								&& right.type === 'Identifier'
+								&& left.name === right.name) {
+							context.report(assignment, ProblemMessages['no-self-assign'], {0: left.name, pid: 'no-self-assign', nls: 'no-self-assign'}); //$NON-NLS-1$ //$NON-NLS-2$
+						}
+					}
+				}
+				return {
+					"AssignmentExpression" : checkAssignmentExpression,
+					"VariableDeclarator" : checkVariableDeclarator
+				};
+			},
+		/** @callback */
+		'type-checked-consistent-return' : function(context) {
+				var functions = [];
+			
+				//--------------------------------------------------------------------------
+				// Helpers
+				//--------------------------------------------------------------------------
+			
+				/**
+				 * Marks entrance into a function by pushing a new object onto the functions
+				 * stack.
+				 * @returns {void}
+				 * @private
+				 */
+				function enterFunction() {
+					functions.push({});
+				}
+			
+				/**
+				 * Marks exit of a function by popping off the functions stack.
+				 * @returns {void}
+				 * @private
+				 */
+				function exitFunction() {
+					functions.pop();
+				}
+				/**
+				 * @description Try to fetch the backing type value from Tern
+				 * @param {Object} node The AST node
+				 * @returns {String} The name of the type of the value
+				 */
+				function getValue(node) {
+					if (node.argument) {
+						var tern = context.getTern();
+						var query = {end: node.argument.start};
+						var foundType = null;
+						var expr = tern.findQueryExpr(tern.file, query);
+						if (!expr) {
+							return "undefined"; //$NON-NLS-1$
+						}
+						var type = tern.findExprType(query, tern.file, expr);
+						if (type) {
+							foundType = type;
+						}
+						if (foundType) {
+							var typeString = foundType.toString();
+							switch(typeString) {
+								case "bool" :
+									return "boolean"; //$NON-NLS-1$
+								case "{}" :
+									return "object"; //$NON-NLS-1$
+								case "?" :
+									return "null"; //$NON-NLS-1$
+								default :
+									return typeString;
+							}
+						}
+						return "object"; //$NON-NLS-1$
+					}
+					return "undefined"; //$NON-NLS-1$
+				}
+			
+				//--------------------------------------------------------------------------
+				// Public
+				//--------------------------------------------------------------------------
+			
+				return {
+			
+					"Program": enterFunction,
+					"FunctionDeclaration": enterFunction,
+					"FunctionExpression": enterFunction,
+					"ArrowFunctionExpression": enterFunction,
+			
+					"Program:exit": exitFunction,
+					"FunctionDeclaration:exit": exitFunction,
+					"FunctionExpression:exit": exitFunction,
+					"ArrowFunctionExpression:exit": exitFunction,
+					/* @callback */
+					"ReturnStatement": function(node) {
+						var returnInfo = functions[functions.length - 1];
+						var returnTypeDefined = "type" in returnInfo;
+			
+						if (returnTypeDefined) {
+							var typeOfReturnStatement = getValue(node);
+							var storeType = returnInfo.type;
+							if (storeType !== typeOfReturnStatement) {
+								// "null" and "object", "string" or String" are compatible
+								switch(storeType) {
+									case "null" :
+										if (typeOfReturnStatement !== "object" && typeOfReturnStatement !== "String" && typeOfReturnStatement !== "string") {
+											context.report(node, ProblemMessages['inconsistent-return'], {type1: storeType, type2: typeOfReturnStatement});
+										}
+										break;
+									case "String" :
+									case "string" :
+										if (typeOfReturnStatement !== "null") {
+											context.report(node, ProblemMessages['inconsistent-return'], {type1: storeType, type2: typeOfReturnStatement});
+										}
+										break;
+									case "object" :
+										if (typeOfReturnStatement !== "null") {
+											context.report(node, ProblemMessages['inconsistent-return'], {type1: storeType, type2: typeOfReturnStatement});
+										}
+										break;
+									default:
+										context.report(node, ProblemMessages['inconsistent-return'], {type1: storeType, type2: typeOfReturnStatement});
+								}
+							}
+						} else {
+							returnInfo.type = getValue(node);
+						}
+					}
+				};
+			},
+		'no-void': function(context) {
+			return {
+				"UnaryExpression": function(node) {
+					if (node.operator === "void") {
+						context.report(node, ProblemMessages['no-void']);
+					}
+				}
+			};
+		},
+		'no-extra-bind': noExtraBind,
+		'no-implicit-coercion': noImplicitCoercion,
+		'no-extend-native': noExtendNative,
+		'no-lone-blocks' : noLoneBlocks,
+		'quotes' : quotes,
+		'yoda' : yoda,
+		'no-param-reassign' : noParamReassign,
+		'no-native-reassign' : noNativeReassign,
+		'no-unused-expressions' : noUnusedExpressions,
+		'no-invalid-this' : noInvalidThis,
+		'no-trailing-spaces' : noTrailingSpaces
+	};
+
+	/**
+	 * @description Map all of the callees in the given array into the obj map
+	 * @private
+	 * @param {Array.<Object>} arr The array of callees
+	 * @param {Object} obj The map
+	 */
+	function _mapCallees(arr, obj) {
+		for(var i = 0; i < arr.length; i++) {
+			obj[arr[i]] = true;
+		}
+	}
+
+	var _callees = Object.create(null);
+	_mapCallees(['require', 'requirejs', 'importScripts', 'define', 'Worker', 'SharedWorker', 'addEventListener', 'RegExp', //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$
+	'removeEventListener'], _callees);  //$NON-NLS-1$
+    var _documentCallees = Object.create(null);
+    _mapCallees(['createElement'], _documentCallees); //$NON-NLS-1$
     
     /**
-     * @name getRules
-     * @description The raw rule object
-     * @returns {Object} The raw rule object
+     * @description Collects all the string literals and their location infos into the line mapping
+     * @private
+     * @param {Object} node The AST node to check
+     * @param {Object} lineMap The mapping of literals and line infos
      */
-    function getRules() {
-        return rules;
+    function _collectLinesWithStringLiterals(node, lineMap){
+    	
+    	// Create a map of line numbers to a list of literal nodes
+    	if (typeof node.value === 'string' && node.value.length > 0){
+    		if (node.value.toLowerCase() === 'use strict'){
+    			return;
+    		}
+    		if(/^(?:[\.,-\/#!$%\^&\*;:{}=\-_`~()@\+\?><\[\]\+])$/.test(node.value)) {
+    			return; //don't nag about punctuation
+    		} else if(/^(?:==|!=|===|!==|=>)$/.test(node.value)) {
+    			return; //don't nag about operators
+    		}
+    		if (node.parent){
+    			switch(node.parent.type) {
+    				case 'ImportDeclaration':
+    				case 'MemberExpression':
+    				case 'SwitchCase':
+        			case 'ExportAllDeclaration' :
+    				case 'UnaryExpression': {
+    					return;
+    				}
+    				case 'BinaryExpression': {
+    					if(node.parent.operator !== '+') {
+    						return;
+    					}
+    					break;
+    				}
+    				case 'Property': {
+    					if(node.parent.key === node) {
+    						return;
+    					}
+						var _p = node.parent.parent.parent;
+						if(_p && _p.type === 'CallExpression' && _p.callee && _p.callee.name === 'define') {
+							return;
+						}
+    					break;
+    				}
+    				case 'NewExpression':
+    				case 'CallExpression': {
+    					var callee = node.parent.callee;
+    					if(callee) {
+    						if(callee.type === 'MemberExpression' && callee.property) {
+    							if(callee.object && callee.object.type === "Identifier" && callee.object.name === "document" && _documentCallees[callee.property.name]) {
+    								return;
+    							} else if(_callees[callee.property.name]) {
+	    							return;
+								}
+    						} else if(_callees[callee.name]) {
+    							return;
+    						}
+    					}
+    					break;
+    				}
+    				case 'ArrayExpression': {
+    					_p = node.parent.parent;
+    					if(_p.type === 'CallExpression' && (_p.callee.name === 'define' || _p.callee.name === 'require' || _p.callee.name === 'requirejs')) {
+    						return;
+    					}
+    					break;
+    				}
+    			}
+    		}
+    		var lineNum = node.loc.end.line;
+    		if (!lineMap[lineNum]){
+    			lineMap[lineNum] = [];
+    		}
+    		lineMap[lineNum].push(node);
+    	}
     }
-    
-    /**
-     * @name getESLintRules
-     * @description Returns the rule object for ESLint
-     * @returns {Object} The rule object
-     * @since 7.0
-     */
-    function getESLintRules() {
-        var ruleobj = Object.create(null);
-        var keys = Object.keys(rules);
-        for (var i=0; i<keys.length; i++) {
-            var rule = keys[i];
-            ruleobj[rule] = rules[rule].rule;
-        }
-        return ruleobj;
-    }
-		    
+
 	return {
-	    getRules: getRules,
-	    getESLintRules: getESLintRules
+		rules: rules
 	};
 });

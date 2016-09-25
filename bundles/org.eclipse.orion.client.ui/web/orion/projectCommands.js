@@ -19,6 +19,7 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 		var projectCommandUtils = {};
 
 		var progress;
+		var preferences;
 		var deployStore;
 
 
@@ -146,7 +147,8 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 			} else {
 				action = "orion.project.deploy." + deployService.id;
 			}
-			deployStore.put(projectName, action);
+			deployStore[projectName] = action;
+			preferences.put('/deploy/project', deployStore);
 		}
 		if(sharedLaunchConfigurationDispatcher){
 			sharedLaunchConfigurationDispatcher.dispatchEvent({type: "changedDefault", newValue: action });
@@ -155,7 +157,7 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 
 	projectCommandUtils.getDefaultLaunchCommand = function(projectName){
 		if(deployStore){
-			return deployStore.get(projectName);
+			return deployStore[projectName];
 		}
 	};
 
@@ -172,8 +174,8 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 	function runDeploy(enhansedLaunchConf, context){
 		var liveEditWrapper = lib.$("#liveEditSwitchWrapper"); //$NON-NLS-0$
 		if (liveEditWrapper) {
-			var liveEditCheck = lib.$(".orionSwitchCheck", liveEditWrapper);
-			var liveEdit = liveEditCheck && liveEditCheck.checked;
+			var liveEditCheck = lib.$(".orionSwitch", liveEditWrapper); //$NON-NLS-0$
+			var liveEdit = liveEditCheck && liveEditCheck.getAttribute("aria-checked") === "true"; //$NON-NLS-0$ //$NON-NLS-1$
 		}
 		var startTime = Date.now();
 
@@ -191,7 +193,7 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 
 		function deploy(progressMessage){
 			if(sharedLaunchConfigurationDispatcher && context.launchConfiguration){
-				context.launchConfiguration.status = {State: "PROGRESS", Message: progressMessage, ShortMessage: messages["deploying"]}; //$NON-NLS-1$ //$NON-NLS-0$
+				context.launchConfiguration.status = {State: "PROGRESS", Message: progressMessage, ShortMessage: messages["deploying"], Info: "Deploying" }; //$NON-NLS-1$ //$NON-NLS-0$
 				sharedLaunchConfigurationDispatcher.dispatchEvent({type: "changeState", newValue: context.launchConfiguration }); //$NON-NLS-0$
 			}
 			
@@ -897,8 +899,8 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 	 */
 	projectCommandUtils.createProjectCommands = function(serviceRegistry, commandService, fileClient, projectClient, dependencyTypes, deploymentTypes) {
 		if(!deployStore){
-			var preferences = new mPreferences.PreferencesService(serviceRegistry);
-			preferences.getPreferences('/deploy/project').then(
+			preferences = serviceRegistry.getService("orion.core.preference");
+			preferences.get('/deploy/project').then(
 				function(deploySettings){
 					deployStore = deploySettings;
 				}
@@ -918,15 +920,15 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 		function dispatchNewProject(workspace, project){
 			var dispatcher = FileCommands.getModelEventDispatcher();
 			if(project.ContentLocation){
-				fileClient.read(project.ContentLocation, true).then(function(folder){
+				return fileClient.read(project.ContentLocation, true).then(function(folder){
 					dispatcher.dispatchEvent( { type: "create", parent: workspace, newValue: folder});
+					return folder;
 				},
 				function(){
 					dispatcher.dispatchEvent( { type: "create", parent: workspace, newValue: null});
 				});
-			} else {
-				dispatcher.dispatchEvent( { type: "create", parent: workspace, newValue: null});
 			}
+			dispatcher.dispatchEvent( { type: "create", parent: workspace, newValue: null});
 		}
 
 		dependencyTypes =  dependencyTypes || [];
@@ -1009,56 +1011,6 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 		});
 		addFolderCommand.isAddDependency = true;
 		commandService.addCommand(addFolderCommand);
-
-		var initProjectCommand = new mCommands.Command({
-			name: messages["convertToProject"],
-			tooltip: messages["convertThisFolderIntoA"],
-			id: "orion.project.initProject", //$NON-NLS-0$
-			callback: function(data) {
-				var item = forceSingleItem(data.items);
-				if(item){
-					var init = function() {
-						projectClient.initProject(item.Location).then(function(project){
-							fileClient.read(item.Location, true).then(function(fileMetadata){
-								explorer.changedItem(item, true);
-							}, errorHandler);
-							dispatchNewProject(item, project);
-						}, errorHandler);
-					};
-					projectClient.readProject(item).then(function(project) {
-						if (project) {
-							progress.setProgressResult({
-								Message: messages["thisFolderIsAProject"],
-								Severity: "Warning" //$NON-NLS-0$
-							});
-							explorer.changedItem(item, true);
-						} else {
-							init();
-						}
-					}, init);
-				}
-
-			},
-			visibleWhen: function(items) {
-				if (!explorer || !explorer.isCommandsVisible()) {
-					return false;
-				}
-				var item = forceSingleItem(items);
-				if (item && ((item.parent && item.parent.Projects) || (item.Parents && item.Parents.length === 0))) {
-					//TODO only works if children has been cached
-					if (item.children) {
-						for(var i=0; i<item.children.length; i++){
-							if(item.children[i].Name && !item.children[i].Directory && item.children[i].Name.toLowerCase() === "project.json"){ //$NON-NLS-0$
-								return false;
-							}
-						}
-					}
-					return true;
-				}
-				return false;
-			}
-		});
-		commandService.addCommand(initProjectCommand);
 
 		function createAddDependencyCommand(type){
 			return projectClient.getProjectHandler(type).then(function(handler){
@@ -1311,20 +1263,13 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 
 					var handleOk = function(event) { //$NON-NLS-0$
 						var projectName = event.value;
-						var handleOpen = function (event) {
-							if (projectName == event.item.Name && fileInput.files && fileInput.files.length > 0) {
-								for (var i = 0; i < fileInput.files.length; i++) {
-									explorer._uploadFile(event.item, fileInput.files.item(i), false);
-								}
-								explorer.sidebarNavInputManager.removeEventListener("projectOpened", handleOpen); //$NON-NLS-0$
-							}
-						};
-						// Add listener to wait for the project to open
-
 						fileClient.loadWorkspace(fileClient.fileServiceRootURL(item.Location)).then(function(workspace) {
 							progress.progress(projectClient.createProject(workspace.ChildrenLocation, {Name: projectName}),i18nUtil.formatMessage( messages["Creating project ${0}"], projectName)).then(function(project){
-								explorer.sidebarNavInputManager.addEventListener("projectOpened", handleOpen); //$NON-NLS-0$
-								dispatchNewProject(workspace, project);
+								dispatchNewProject(workspace, project).then(function(fileMetadata) {
+									for (var i = 0; i < fileInput.files.length; i++) {
+										explorer._uploadFile(fileMetadata, fileInput.files.item(i), false);
+									}
+								});
 							}, function(error) {
 								var response = JSON.parse(error.response);
 								var projectNameDialogRetry = new PromptDialog.PromptDialog({
@@ -1428,8 +1373,7 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 					tootlip: deployService.tooltip,
 					id: "orion.project.deploy." + deployService.id,
 					callback: function(data){
-						var item = explorer.treeRoot;
-						var project = item.Project;
+						var project = data.items;
 
 						var func = arguments.callee;
 						var params = handleParamsInCommand(func, data, deployService.tooltip);
@@ -1449,11 +1393,7 @@ define(['require', 'i18n!orion/navigate/nls/messages', 'orion/webui/littlelib', 
 					},
 					visibleWhen: function(item) {
 						if (!(command.showCommand == undefined || command.showCommand)) return false;
-						item = explorer.treeRoot;
-						if(!item.Project || !item.children || item.children.length === 0){
-							return false;
-						}
-						return projectClient.matchesDeployService(item.children[0], deployService);
+						return projectClient.matchesDeployService(item, deployService);
 					}
 				};
 

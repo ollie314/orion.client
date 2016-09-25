@@ -12,7 +12,7 @@
 /*eslint-env browser, amd*/
 /*eslint no-unused-params:0*/
 
-define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialog', 'orion/webui/dialog', 'orion/URITemplate', 'require' ], function(messages, DirPrompter, dialog, URITemplate, require) {
+define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialog', 'orion/webui/dialog', 'orion/URITemplate', 'require' ], function(messages, DirPrompter, mDialog, URITemplate, require) {
 
 	var editTemplate = new URITemplate("edit/edit.html#{,resource,params*}"); //$NON-NLS-0$
 	
@@ -20,7 +20,7 @@ define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialo
 		this._init(options);
 	}
 
-	CloneGitRepositoryDialog.prototype = new dialog.Dialog();
+	CloneGitRepositoryDialog.prototype = new mDialog.Dialog();
 
 	CloneGitRepositoryDialog.prototype.TEMPLATE = '<span id="basicPane">' + '<div style="padding: 8px">' + '<label for="gitUrl">${Repository URL:}</label>'
 			+ '<input id="gitUrl" style="width: 50em" value=""/>' + '</div>'
@@ -35,7 +35,10 @@ define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialo
 			+ '<div style="padding: 8px">' + '<input id="isExistingProject" type="radio" name="isNewProject" value="existing"/>'
 			+ '<label for="isExistingProject" style="padding: 0 8px">${Existing directory:}</label>' + '<input id="gitPath" type="hidden" value="">'
 			+ '<span id="shownGitPath" style="padding-right: 24px"></span>' + '<a id="changeGitPath" href="javascript:">${Change...}</a>' + '</div>'
-
+			
+			+ '<div style="padding: 8px" id="cloneSubmoduleContainer">' 
+			+ '<label for="cloneSubmoduleCheckbox"><input type="checkbox" id="cloneSubmoduleCheckbox" checked>${Clone submodules automatically}</label>' + '</div>'
+			
 			+ '</span>';
 
 	CloneGitRepositoryDialog.prototype._init = function(options) {
@@ -45,10 +48,13 @@ define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialo
 		this.modal = true;
 		this.messages = messages;
 
+
+		this.showSubmoduleOptions = options.showSubmoduleOptions||false;
 		this.advancedShown = false;
 		this.alwaysShowAdvanced = options.alwaysShowAdvanced;
 		this.advancedOnly = options.advancedOnly;
 		this.url = options.url;
+		this.root = options.root||"/";
 		this.serviceRegistry = options.serviceRegistry;
 		this.fileClient = options.fileClient;
 		this.func = options.func;
@@ -78,6 +84,10 @@ define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialo
 
 	CloneGitRepositoryDialog.prototype._bindToDom = function(parent) {
 		var that = this;
+
+		if(!this.showSubmoduleOptions){
+			this.$cloneSubmoduleContainer.style.display = "none"; //$NON-NLS-0$
+		}
 
 		if (this.url) {
 			this.$gitUrl.value = this.url;
@@ -138,7 +148,8 @@ define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialo
 		this.func && this.func(
 			(this.advancedOnly ? undefined : this.$gitUrl.value),
 			(this.advancedShown && this.$isNewProject.checked) ? undefined : this.$gitPath.value,
-			(this.advancedShown && !this.$isNewProject.checked) ? undefined : this.$gitName.value
+			(this.advancedShown && !this.$isNewProject.checked) ? undefined : this.$gitName.value,
+			(this.showSubmoduleOptions) ? this.$cloneSubmoduleCheckbox.checked:undefined
 		);
 	};
 
@@ -180,25 +191,27 @@ define([ 'i18n!git/nls/gitmessages', 'orion/webui/dialogs/DirectoryPrompterDialo
 
 		this.$isExistingProject.checked = true;
 
-		var dialog = new DirPrompter.DirectoryPrompterDialog({ title : messages["ChooseFolderDialog"],
-		serviceRegistry : this.serviceRegistry,
-		fileClient : this.fileClient,
-		func : function(targetFolder) {
-			if (targetFolder && targetFolder.Location) {
-				that.$gitPath.value = targetFolder.Location;
-				while (that.$shownGitPath.hasChildNodes()) {
-					that.$shownGitPath.removeChild(that.$shownGitPath.lastChild);
-				}
-				that.$shownGitPath.appendChild(makePathSegment(targetFolder));
-
-				var currentFolder = targetFolder;
-				while (currentFolder.parent && currentFolder.parent.Location !== "/") {
-					that.$shownGitPath.insertBefore(document.createTextNode("/"), that.$shownGitPath.firstChild); //$NON-NLS-0$
-					that.$shownGitPath.insertBefore(makePathSegment(currentFolder.parent), that.$shownGitPath.firstChild);
-					currentFolder = currentFolder.parent;
+		var dialog = new DirPrompter.DirectoryPrompterDialog({
+			title : messages["ChooseFolderDialog"],
+			root:this.root,
+			serviceRegistry : this.serviceRegistry,
+			fileClient : this.fileClient,
+			func : function(targetFolder) {
+				if (targetFolder && targetFolder.Location) {
+					that.$gitPath.value = targetFolder.Location;
+					while (that.$shownGitPath.hasChildNodes()) {
+						that.$shownGitPath.removeChild(that.$shownGitPath.lastChild);
+					}
+					that.$shownGitPath.appendChild(makePathSegment(targetFolder));
+	
+					var currentFolder = targetFolder;
+					while (currentFolder.parent && currentFolder.parent.Location !== "/") {
+						that.$shownGitPath.insertBefore(document.createTextNode("/"), that.$shownGitPath.firstChild); //$NON-NLS-0$
+						that.$shownGitPath.insertBefore(makePathSegment(currentFolder.parent), that.$shownGitPath.firstChild);
+						currentFolder = currentFolder.parent;
+					}
 				}
 			}
-		}
 		});
 		
 		this._addChildDialog(dialog);

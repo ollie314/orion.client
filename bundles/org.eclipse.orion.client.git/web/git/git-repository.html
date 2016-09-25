@@ -9,32 +9,30 @@
 		<link rel="icon" href="images/git.png" type="image/png">
 		<script src="../requirejs/require.js"></script>
 		<script>
-		/*eslint-env browser, amd*/
-		require({
-		  baseUrl: '..',
-		
-		  // set the paths to our library packages
-		  packages: [],
-		
-		  paths: {
-		    text: 'requirejs/text',
-		    i18n: 'requirejs/i18n',
-			domReady: 'requirejs/domReady'
-		  }
-		});
-		
-		require(["git/git-repository"]);
+			/*eslint-env browser, amd*/
+			require(["../orion/require-config.js"], function(config){
+				function load() {
+					require(["git/git-repository"], null, config.errback);
+				}
+				if (sessionStorage.gitSplashShown) {
+					load();
+				} else {
+					sessionStorage.gitSplashShown = true;
+					require.config({config: {"orion/splash": {splashID: "Git"}}});
+					require(["orion/splash"], load, load);
+				}
+			});
 		</script>
 </head>
 	<body id="orion-repository" class="orionPage">
-		<div id="sideMenu" class="sideMenu"></div>
+		<nav id="sideMenu" class="sideMenu"></nav>
 		<div id="pageContent" class="content-fixedHeight">
 			<div id="sideMenuToggle" class="sideMenuToggle"></div>
 			<div id="pageToolbar" class="mainToolbar toolComposite toolbarLayout"></div>
 			<div id="innerPanels" class="innerPanels">
 				<div id="leftPane" class="auxpane sidePanelLayout hasSplit">
 					<div class="fixedToolbarHolder sidebarWrapper">
-						<div id="sidebar" class="dropdownTrigger toolbarTarget sidebar"></div>
+						<div id="pageSidebar" class="dropdownTrigger toolbarTarget sidebar"></div>
 					</div>
 				</div>
 				<div class="split splitLayout"></div>
@@ -46,5 +44,12 @@
 			</div>
 		</div>
 		<div class="footer-fixed-bottom footer" id="footer"></div>
+		<script>
+			if (!sessionStorage.gitSplashShown) {
+				var splash = document.createElement("div");
+				splash.id = splash.className = "splash";
+				document.body.appendChild(splash);
+			}
+		</script>
 	</body>
 </html>

@@ -1,6 +1,6 @@
  /*******************************************************************************
  * @license
- * Copyright (c) 2013, 2014 IBM Corporation and others.
+ * Copyright (c) 2013, 2016 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials are made 
  * available under the terms of the Eclipse Public License v1.0 
  * (http://www.eclipse.org/legal/epl-v10.html), and the Eclipse Distribution 
@@ -12,19 +12,19 @@
 /*eslint-env amd*/
 define([
 'orion/objects',
-'javascript/finder',
-'javascript/compilationUnit'
-], function(Objects, Finder, CU) {
+'orion/Deferred',
+'javascript/finder'
+], function(Objects, Deferred, Finder) {
 	
 	/**
 	 * @name javascript.JavaScriptOccurrences
 	 * @description creates a new instance of the outliner
 	 * @constructor
 	 * @public
-	 * @param {javascript.ASTManager} astManager
+	 * @param {Worker} ternWorker
 	 */
-	function JavaScriptOccurrences(astManager) {
-		this.astManager = astManager;
+	function JavaScriptOccurrences(ternWorker) {
+		this.ternworker = ternWorker;
 	}
 	
 	Objects.mixin(JavaScriptOccurrences.prototype, /** @lends javascript.JavaScriptOccurrences.prototype*/ {
@@ -39,31 +39,30 @@ define([
 		 * @param {Object} ctxt The current selection context
 		 */
 		computeOccurrences: function(editorContext, ctxt) {
-			var that = this;
-			return editorContext.getFileMetadata().then(function(meta) {
-			    if(meta.contentType.id === 'application/javascript') {
-			        return that.astManager.getAST(editorContext).then(function(ast) {
-						return Finder.findOccurrences(ast, ctxt);
-					});
-			    }
-			    return editorContext.getText().then(function(text) {
-    			    var blocks = Finder.findScriptBlocks(text);
-    	            if(blocks && blocks.length > 0) {
-    		            var cu = new CU(blocks, meta);
-    		            if(cu.validOffset(ctxt.selection.start)) {
-        		            return that.astManager.getAST(cu.getEditorContext()).then(function(ast) {
-                				return Finder.findOccurrences(ast, ctxt);
-                			});
-            			}
-        			}
-    			});
-			});
+			var deferred = new Deferred();
+			editorContext.getFileMetadata().then(function(meta) {
+				editorContext.getText().then(function(text) {
+					var word = Finder.findWord(text, ctxt.selection.end);
+					if(word) {
+						var files = [{type: "full", name: meta.location, text: text}]; //$NON-NLS-1$
+						this.ternworker.postMessage({request: "occurrences", args: {params: {offset: ctxt.selection.end}, files: files, meta: {location: meta.location}}}, function(response, error) { //$NON-NLS-1$
+							if(response.occurrences) {
+								deferred.resolve(response.occurrences);
+							} else if(error) {
+								deferred.reject(error);
+							}
+						});
+					} else {
+						deferred.resolve([]);
+					}
+				}.bind(this));
+				
+			}.bind(this));
+			return deferred;
 		}
 	});
 	
-	JavaScriptOccurrences.prototype.contructor = JavaScriptOccurrences;
-	
 	return {
 		JavaScriptOccurrences: JavaScriptOccurrences
-		};
+	};
 });
