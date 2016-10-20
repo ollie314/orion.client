@@ -15,13 +15,17 @@
 
 define([
 	'i18n!orion/settings/nls/messages',
+	'orion/commands',
 	'orion/globalCommands',
 	'orion/PageUtil',
 	'orion/webui/littlelib',
+	'orion/i18nUtil',
 	'orion/objects',
+	'orion/operationsClient',
 	'orion/URITemplate',
 	'orion/widgets/themes/ThemeBuilder',
 	'orion/settings/ui/PluginSettings',
+	'orion/status',
 	'orion/widgets/themes/ThemePreferences',
 	'orion/widgets/themes/editor/ThemeData',
 	'orion/widgets/themes/ThemeImporter',
@@ -36,11 +40,12 @@ define([
 	'orion/editorPreferences',
 	'orion/generalPreferences',
 	'orion/metrics',
-	'orion/util'
-], function(messages, mGlobalCommands, PageUtil, lib, objects, URITemplate, 
-		ThemeBuilder, SettingsList, mThemePreferences, editorThemeData, editorThemeImporter, SplitSelectionLayout, PluginList, 
+	'orion/util',
+], function(messages, mCommands, mGlobalCommands, PageUtil, lib, i18nUtil, objects, mOperationsClient, URITemplate, 
+		ThemeBuilder, SettingsList, mStatus, mThemePreferences, editorThemeData, editorThemeImporter, SplitSelectionLayout, PluginList, 
 		GitSettings, EditorSettings, ThemeSettings, UserSettings, GlobalizationSettings, GeneralSettings, mEditorPreferences, mGeneralPreferences, mMetrics, util) {
 
+	
 	/**
 	 * @param {Object} options
 	 * @param {DomNode} node
@@ -48,6 +53,8 @@ define([
 	var superPrototype = SplitSelectionLayout.prototype;
 	function SettingsContainer(options, node) {
 		SplitSelectionLayout.apply(this, arguments);
+		this.operationsClient = new mOperationsClient.OperationsClient(this.registry);
+		this.statusService = new mStatus.StatusReportingService(this.registry, this.operationsClient, "statusPane", "notifications", "notificationArea"); //$NON-NLS-2$ //$NON-NLS-1$ //$NON-NLS-3$
 
 		var getPluginsRefs = this.registry.getServiceReferences("orion.core.getplugins"); //$NON-NLS-0$
 		this.pluginsUri = getPluginsRefs[0] && getPluginsRefs[0].getProperty("uri"); //$NON-NLS-0$
@@ -61,6 +68,20 @@ define([
 		this.settingsCore.pluginRegistry.addEventListener("started", pluginsUpdated);
 		this.settingsCore.pluginRegistry.addEventListener("stopped", pluginsUpdated);
 		this.settingsCore.pluginRegistry.addEventListener("updated", pluginsUpdated);
+		
+		var xhr = new XMLHttpRequest();
+		this.versionString = null;
+		xhr.onreadystatechange = function() {
+			if (xhr.readyState === 4 && xhr.status === 200){
+				var resp = JSON.parse(xhr.responseText);
+				if (typeof resp.build === "string"){
+					this.versionString = i18nUtil.formatMessage(messages["version"], resp.build);
+					this.statusService.setMessage(this.versionString);
+				}
+			}
+		}.bind(this);
+		xhr.open("GET", "../version",  true); //$NON-NLS-1$ //$NON-NLS-2$
+		xhr.send(null);
 	}
 	SettingsContainer.prototype = Object.create(superPrototype);
 	objects.mixin(SettingsContainer.prototype, {
@@ -197,7 +218,7 @@ define([
 
 			this.updateToolbar(id);
 
-			var editorSettingsNode = document.createElement('div'); //$NON-NLS-0$
+			var editorSettingsNode = document.createElement('div');
 			this.table.appendChild(editorSettingsNode);
 
 			var editorTheme = new editorThemeData.ThemeData();
@@ -230,7 +251,7 @@ define([
 
 			this.updateToolbar(id);
 			
-			var userNode = document.createElement('div'); //$NON-NLS-0$
+			var userNode = document.createElement('div');
 			this.table.appendChild(userNode);
 
 			this.userWidget = new UserSettings({
@@ -258,7 +279,7 @@ define([
 
 			this.updateToolbar(id);
 			
-			var userNode = document.createElement('div'); //$NON-NLS-0$
+			var userNode = document.createElement('div');
 			this.table.appendChild(userNode);
 
 			this.gitWidget = new GitSettings({
@@ -281,7 +302,7 @@ define([
 
 			this.updateToolbar(id);
 
-			var themeSettingsNode = document.createElement('div'); //$NON-NLS-0$
+			var themeSettingsNode = document.createElement('div');
 			this.table.appendChild(themeSettingsNode);
 
 			var editorTheme = new editorThemeData.ThemeData();
@@ -289,12 +310,12 @@ define([
 			var themePreferences = new mThemePreferences.ThemePreferences(this.preferences, editorTheme);
 			var editorThemeWidget = new ThemeBuilder({ commandService: this.commandService, preferences: themePreferences, themeData: editorTheme, toolbarId: 'editorThemeSettingsToolActionsArea', serviceRegistry: this.registry}); //$NON-NLS-0$
 
-			var command = {
+			var command = new mCommands.Command({
 				name:messages.Import,
 				tip:messages['Import a theme'],
 				id: "orion.importTheme", //$NON-NLS-1$
 				callback: themeImporter.showImportThemeDialog.bind(themeImporter)
-			};
+			});
 			this.commandService.addCommand(command);
 			this.commandService.registerCommandContribution('themeCommands', "orion.importTheme", 4); //$NON-NLS-1$ //$NON-NLS-2$
 			var editorPreferences = new mEditorPreferences.EditorPreferences (this.preferences);
@@ -325,7 +346,7 @@ define([
 
 			this.updateToolbar(id);
 			
-			var userNode = document.createElement('div'); //$NON-NLS-0$
+			var userNode = document.createElement('div');
 			this.table.appendChild(userNode);
 
 			this.globalizationWidget = new GlobalizationSettings({
@@ -353,7 +374,7 @@ define([
 
 			this.updateToolbar(id);
 			
-			var userNode = document.createElement('div'); //$NON-NLS-0$
+			var userNode = document.createElement('div');
 			this.table.appendChild(userNode);
 			
 			var generalPreferences = new mGeneralPreferences.GeneralPreferences (this.preferences);
@@ -466,6 +487,10 @@ define([
 					resource: resource,
 					params: params
 				});
+			}
+			
+			if (this.versionString){
+				this.statusService.setMessage(this.versionString);
 			}
 		},
 

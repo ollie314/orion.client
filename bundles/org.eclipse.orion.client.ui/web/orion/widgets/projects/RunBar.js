@@ -69,10 +69,12 @@ define([
 				this._undestroyedTooltips = []; // an array of all the tooltips that need to be destroyed when this widget is destroyed
 								
 				this._playButton = lib.$("button.playButton", this._domNode); //$NON-NLS-0$
+				this._playButton.setAttribute("aria-label", messages["Run"]);  //$NON-NLS-0$ //$NON-NLS-1$
 				this._boundPlayButtonListener = this._runBarButtonListener.bind(this, this._playButtonCommand);
 				this._playButton.addEventListener("click", this._boundPlayButtonListener); //$NON-NLS-0$ 
 				
 				this._stopButton = lib.$("button.stopButton", this._domNode); //$NON-NLS-0$
+				this._stopButton.setAttribute("aria-label", messages["Stop"]);  //$NON-NLS-0$ //$NON-NLS-1$
 				this._boundStopButtonListener = this._runBarButtonListener.bind(this, "orion.launchConfiguration.stopApp"); //$NON-NLS-0$
 				this._stopButton.addEventListener("click", this._boundStopButtonListener); //$NON-NLS-0$
 				
@@ -703,14 +705,36 @@ define([
 		
 		_enableControl: function(domNode) {
 			domNode.classList.remove("disabled"); //$NON-NLS-0$
+			domNode.removeAttribute("disabled"); //$NON-NLS-0$
+			domNode.removeAttribute("aria-disabled"); //$NON-NLS-0$
 		},
 		
 		_disableControl: function(domNode) {
 			domNode.classList.add("disabled"); //$NON-NLS-0$
+			domNode.setAttribute("disabled", "true"); //$NON-NLS-0$ //$NON-NLS-1$
+			domNode.setAttribute("aria-disabled", "true"); //$NON-NLS-0$ //$NON-NLS-1$
 		},
 		
 		_isEnabled: function(domNode) {
 			return !domNode.classList.contains("disabled"); //$NON-NLS-0$
+		},
+		
+		_disableSwitch: function(wrapperNode){
+			this._disableControl(wrapperNode);
+			
+			var switchNode = lib.$("div.orionSwitch", wrapperNode); //$NON-NLS-0$
+			if (switchNode) {
+				switchNode.removeAttribute("tabindex"); //$NON-NLS-0$
+			}
+		},
+		
+		_enableSwitch: function(wrapperNode){
+			this._enableControl(wrapperNode);
+			
+			var switchNode = lib.$("div.orionSwitch", wrapperNode); //$NON-NLS-0$
+			if (switchNode) {
+				switchNode.setAttribute("tabindex", "0"); //$NON-NLS-0$ //$NON-NLS-1$
+			}
 		},
 		
 		_enableLink: function(linkNode, href) {
